@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from math import floor
 from random import uniform
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.broker import AlpacaBrokerAdapter, PaperBrokerAdapter
@@ -504,7 +504,16 @@ class CockpitService:
         return position
 
     def _next_order_id(self, db: Session) -> str:
-        return f"ORD-{len(db.scalars(select(OrderEntity)).all()) + 1:04d}"
+        persisted_max = db.scalar(select(func.max(OrderEntity.id))) or 0
+        pending_max = 0
+        for instance in db.new:
+            if isinstance(instance, OrderEntity) and instance.order_id.startswith("ORD-"):
+                try:
+                    pending_max = max(pending_max, int(instance.order_id.split("-", 1)[1]))
+                except ValueError:
+                    continue
+        next_seq = max(persisted_max, pending_max) + 1
+        return f"ORD-{next_seq:04d}"
 
     def _order_view(self, row: OrderEntity) -> OrderView:
         return OrderView(

@@ -54,6 +54,7 @@ class Settings:
     auth_trader_password: str
     database_url: str
     redis_url: str
+    cors_origins: list[str]
     broker_mode: str
     allow_live_trading: bool
     allow_controller_mock: bool
@@ -99,6 +100,14 @@ class Settings:
             auth_trader_password=os.getenv("AUTH_TRADER_PASSWORD", "trader123!").strip(),
             database_url=os.getenv("DATABASE_URL", default_db).strip(),
             redis_url=os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0").strip(),
+            cors_origins=[
+                item.strip()
+                for item in os.getenv(
+                    "CORS_ORIGINS",
+                    "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3010,http://localhost:3010",
+                ).split(",")
+                if item.strip()
+            ],
             broker_mode=os.getenv("BROKER_MODE", "paper").strip().lower(),
             allow_live_trading=_as_bool(os.getenv("ALLOW_LIVE_TRADING", "false")),
             allow_controller_mock=_as_bool(os.getenv("ALLOW_CONTROLLER_MOCK", "true"), True),
