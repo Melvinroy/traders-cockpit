@@ -7,6 +7,11 @@ type Props = {
   onSelect: (symbol: string) => void;
 };
 
+function profitEnabled(position: PositionView, activeSymbol: string): boolean {
+  if (position.symbol !== activeSymbol) return false;
+  return ["protected", "P1_done", "P2_done", "runner_only"].includes(position.phase);
+}
+
 export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) {
   const openPositions = positions.filter((position) => isActivePhase(position.phase));
   if (!openPositions.length) {
@@ -26,7 +31,7 @@ export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) 
         const activeQty = activeShares(position);
         const pnl = (live - position.setup.entry) * activeQty;
         const stopEnabled = position.stopMode > 0;
-        const profitEnabled = position.phase !== "trade_entered";
+        const isProfitEnabled = profitEnabled(position, activeSymbol);
         const isActive = position.symbol === activeSymbol;
 
         return (
@@ -42,19 +47,19 @@ export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) 
                 <span className={`op-pnl ${pnl >= 0 ? "op-pnl-pos" : "op-pnl-neg"}`}>{signedMoney(pnl)}</span>
               </div>
               <div className="op-metrics-row">
-                <div>
+                <div className="op-metric">
                   <span className="op-key">ENTRY</span>
                   <br />
                   <span className="op-val">{fp(position.setup.entry)}</span>
                 </div>
-                <div>
+                <div className="op-metric">
                   <span className="op-key">LIVE</span>
                   <br />
                   <span className="op-val">{fp(live)}</span>
                 </div>
                 <div className="op-status-wrap">
-                  <span className={`op-badge ${stopEnabled ? "op-badge-live" : "op-badge-off"}`}>STOP {stopEnabled ? "SET" : "\u2014"}</span>
-                  <span className={`op-badge ${profitEnabled ? "op-badge-info" : "op-badge-off"}`}>PROFIT {profitEnabled ? "ON" : "\u2014"}</span>
+                  <span className={`op-badge ${stopEnabled ? "op-badge-live" : "op-badge-danger"}`}>STOP {stopEnabled ? "SET" : "\u2014"}</span>
+                  <span className={`op-badge ${isProfitEnabled ? "op-badge-info" : "op-badge-off"}`}>PROFIT {isProfitEnabled ? "ON" : "\u2014"}</span>
                 </div>
               </div>
             </div>

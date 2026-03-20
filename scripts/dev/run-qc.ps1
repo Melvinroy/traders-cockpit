@@ -116,6 +116,8 @@ try {
 
   Start-FrontendDev -Port $FrontendPort
   Invoke-BrowserSmoke -Url "http://127.0.0.1:$FrontendPort" -Label "dev-smoke-final"
+  $env:FRONTEND_URL = "http://127.0.0.1:$FrontendPort"
+  node ..\scripts\dev\fidelity-baselines.mjs
 } finally {
   Remove-Item Env:FRONTEND_URL -ErrorAction SilentlyContinue
   Remove-Item Env:BROWSER_SMOKE_LABEL -ErrorAction SilentlyContinue

@@ -388,6 +388,14 @@ select {
   color: var(--text1);
 }
 
+.ticker-symbol-large {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text0);
+  letter-spacing: 0.05em;
+}
+
 .empty-state {
   padding: 30px 14px;
   text-align: center;
@@ -440,6 +448,30 @@ select {
   font-size: 11px;
   font-weight: 500;
   color: var(--text0);
+}
+
+.kv-val-unit {
+  color: var(--text2);
+  font-size: 9px;
+}
+
+.risk-pct-input {
+  width: 50px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  outline: none;
+  background: var(--bg3);
+  color: var(--amber);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.risk-pct-input:focus {
+  border-color: var(--amber);
 }
 
 .kv-val.green,
@@ -1124,7 +1156,7 @@ select {
 .log-entry {
   display: flex;
   gap: 8px;
-  padding: 5px 0;
+  padding: 4px 0;
   border-bottom: 1px solid rgba(30, 42, 58, 0.5);
   animation: fadeIn 0.3s ease;
 }
@@ -1145,6 +1177,7 @@ select {
   color: var(--text3);
   font-size: 9px;
   white-space: nowrap;
+  min-width: 54px;
 }
 
 .log-msg {
@@ -1259,6 +1292,10 @@ select {
   gap: 10px;
 }
 
+.op-metric {
+  flex-shrink: 0;
+}
+
 .op-symbol {
   color: var(--text0);
   font-size: 15px;
@@ -1310,6 +1347,12 @@ select {
   border-color: var(--green-dim);
   background: rgba(0, 208, 122, 0.12);
   color: var(--green);
+}
+
+.op-badge-danger {
+  border-color: var(--red-dim);
+  background: rgba(255, 64, 96, 0.08);
+  color: var(--red);
 }
 
 .op-badge-info {

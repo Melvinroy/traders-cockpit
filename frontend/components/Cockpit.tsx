@@ -154,6 +154,22 @@ export function Cockpit() {
     await hydrate({ autoSelectFirst: false });
   }
 
+  async function commitRiskPct(nextRiskPct: number) {
+    if (!account) return;
+    await api.updateAccount({
+      equity: account.equity,
+      risk_pct: nextRiskPct,
+      mode: account.mode
+    });
+    if (ticker) {
+      const nextSetup = await api.getSetup(ticker);
+      setSetup(nextSetup);
+      setEntryPrice(nextSetup.entry);
+      setManualStop(nextSetup.finalStop);
+    }
+    await hydrate({ autoSelectFirst: false });
+  }
+
   async function previewTrade() {
     if (!setup) return;
     await api.previewTrade({
@@ -246,7 +262,14 @@ export function Cockpit() {
         account={account}
       />
       <div className="workspace">
-        <SetupPanel symbol={activeSymbol || ticker} setup={setup} positions={positions} onSelectPosition={selectPosition} />
+        <SetupPanel
+          symbol={activeSymbol || ticker}
+          setup={setup}
+          account={account}
+          positions={positions}
+          onSelectPosition={selectPosition}
+          onRiskPctCommit={(value) => void commitRiskPct(value)}
+        />
         <EntryPanel
           setup={setup}
           entryPrice={entryPrice || setup?.entry || 0}

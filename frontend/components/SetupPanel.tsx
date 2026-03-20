@@ -1,20 +1,24 @@
 import { OpenPositionsList } from "@/components/OpenPositionsList";
 import { fp } from "@/lib/cockpit-ui";
-import type { PositionView, SetupResponse } from "@/lib/types";
+import type { AccountView, PositionView, SetupResponse } from "@/lib/types";
 
 type Props = {
   symbol: string;
   setup: SetupResponse | null;
+  account: AccountView | null;
   positions: PositionView[];
   onSelectPosition: (symbol: string) => void;
+  onRiskPctCommit: (value: number) => void;
 };
 
-export function SetupPanel({ symbol, setup, positions, onSelectPosition }: Props) {
+export function SetupPanel({ symbol, setup, account, positions, onSelectPosition, onRiskPctCommit }: Props) {
   return (
     <div className="panel setup-panel">
       <div className="panel-header">
         <div className="panel-title">Setup Parameters</div>
-        <div className="panel-symbol">{symbol || "-"}</div>
+        <div className="panel-symbol" id="setupSymbol">
+          {symbol ? <span className="ticker-symbol-large">{symbol}</span> : "-"}
+        </div>
       </div>
       <div className="panel-body" id="setupBody">
         {!setup ? (
@@ -32,14 +36,36 @@ export function SetupPanel({ symbol, setup, positions, onSelectPosition }: Props
             </div>
             <div className="kv-group">
               <div className="kv-group-label">Stop Levels</div>
-              <div className="kv-row"><span className="kv-label">Low of Day</span><span className="kv-val red">{fp(setup.lod)}</span></div>
+              <div className="kv-row"><span className="kv-label">Low of Day</span><span className="kv-val">{fp(setup.lod)}</span></div>
               <div className="kv-row"><span className="kv-label">ATR (14)</span><span className="kv-val amber">{fp(setup.atr14)}</span></div>
               <div className="kv-row"><span className="kv-label">Final Stop</span><span className="kv-val red">{fp(setup.finalStop)}</span></div>
             </div>
             <div className="kv-group">
               <div className="kv-group-label">Risk Sizing</div>
-              <div className="kv-row"><span className="kv-label">Account Equity</span><span className="kv-val">{fp(setup.accountEquity)}</span></div>
-              <div className="kv-row"><span className="kv-label">Risk %</span><span className="kv-val">{setup.riskPct.toFixed(2)}%</span></div>
+              <div className="kv-row"><span className="kv-label">Account Equity</span><span className="kv-val">{fp(account?.equity ?? setup.accountEquity)}</span></div>
+              <div className="kv-row">
+                <span className="kv-label">Risk %</span>
+                <input
+                  key={`${symbol}-${account?.risk_pct ?? setup.riskPct}`}
+                  type="text"
+                  inputMode="decimal"
+                  className="risk-pct-input"
+                  defaultValue={`${(account?.risk_pct ?? setup.riskPct).toFixed(2)}%`}
+                  onFocus={(event) => {
+                    event.currentTarget.value = String(account?.risk_pct ?? setup.riskPct);
+                  }}
+                  onBlur={(event) => {
+                    const next = Number.parseFloat(event.currentTarget.value) || (account?.risk_pct ?? setup.riskPct);
+                    event.currentTarget.value = `${next.toFixed(2)}%`;
+                    onRiskPctCommit(next);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+              </div>
               <div className="kv-row"><span className="kv-label">Dollar Risk</span><span className="kv-val red">{fp(setup.dollarRisk)}</span></div>
               <div className="kv-row"><span className="kv-label">Per-Share Risk</span><span className="kv-val">{fp(setup.perShareRisk)}</span></div>
               <div className="kv-row"><span className="kv-label">Calc. Shares</span><span className="kv-val green">{setup.shares} sh</span></div>
@@ -52,7 +78,10 @@ export function SetupPanel({ symbol, setup, positions, onSelectPosition }: Props
               <div className="kv-row"><span className="kv-label">ATR Ext from 50MA</span><span className="kv-val">{setup.atrExtension.toFixed(2)}x</span></div>
               <div className="kv-row"><span className="kv-label">RVOL</span><span className="kv-val">{setup.rvol.toFixed(1)}x</span></div>
               <div className="kv-row"><span className="kv-label">Ext from 10 MA</span><span className="kv-val">{setup.extFrom10Ma.toFixed(2)}%</span></div>
-              <div className="kv-row"><span className="kv-label">Days to Cover</span><span className="kv-val">{setup.days_to_cover.toFixed(1)} days</span></div>
+              <div className="kv-row">
+                <span className="kv-label">Days to Cover</span>
+                <span className="kv-val">{setup.days_to_cover.toFixed(1)} <span className="kv-val-unit">days</span></span>
+              </div>
             </div>
           </>
         )}

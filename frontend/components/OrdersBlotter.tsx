@@ -49,7 +49,7 @@ export function OrdersBlotter({ orders }: { orders: OrderView[] }) {
               return (
                 <tr key={child.id} className={`order-child-row ${isLast ? "order-child-last" : ""}`} title={child.brokerOrderId ?? undefined}>
                   <td className="order-id-child">
-                    <span className="order-tree-glyph">{isLast ? "└─" : "├─"}</span>
+                    <span className="order-tree-glyph">{isLast ? "\u2514\u2500" : "\u251C\u2500"}</span>
                     <span>{child.id}</span>
                   </td>
                   <td className={typeColorClass(child.type)}>{child.type}</td>
