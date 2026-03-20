@@ -948,7 +948,7 @@ select {
 }
 
 .tranche-card {
-  padding: 9px 11px;
+  padding: 10px 12px;
   border: 1px solid var(--border2);
   border-radius: 4px;
   background: var(--bg2);
@@ -981,7 +981,7 @@ select {
 }
 
 .tranche-label {
-  margin-bottom: 5px;
+  margin-bottom: 6px;
   color: var(--text3);
   font-size: 9px;
   font-weight: 600;
@@ -990,7 +990,7 @@ select {
 }
 
 .tranche-qty {
-  margin-bottom: 3px;
+  margin-bottom: 4px;
   color: var(--text0);
   font-family: "IBM Plex Mono", monospace;
   font-size: 16px;
@@ -1003,7 +1003,7 @@ select {
 }
 
 .tranche-stop {
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   color: var(--red);
   font-size: 10px;
 }
@@ -1014,7 +1014,7 @@ select {
 }
 
 .tranche-pnl {
-  margin-top: 3px;
+  margin-top: 4px;
   font-family: "IBM Plex Mono", monospace;
   font-size: 10px;
 }
