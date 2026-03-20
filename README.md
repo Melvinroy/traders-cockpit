@@ -38,6 +38,8 @@ This repo uses a staged, recovery-friendly delivery flow.
 See:
 
 - [`docs/process/WORKFLOW.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/WORKFLOW.md)
+- [`docs/process/BRANCH_PROTECTION.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/BRANCH_PROTECTION.md)
+- [`docs/process/RELEASE_PROMOTION_CHECKLIST.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/RELEASE_PROMOTION_CHECKLIST.md)
 - [`docs/process/BRANCHING_AND_WORKTREES.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/BRANCHING_AND_WORKTREES.md)
 - [`AGENTS.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/AGENTS.md)
 
@@ -113,6 +115,7 @@ npm run build
 
 - License: MIT
 - Contributions are welcome through issue-first, PR-first workflow
+- Protect `codex/integration-app` and `main` using [`docs/process/BRANCH_PROTECTION.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/BRANCH_PROTECTION.md)
 
 ## Roadmap
 
