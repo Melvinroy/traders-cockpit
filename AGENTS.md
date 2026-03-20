@@ -36,6 +36,19 @@ Use these folders when needed:
 - Frontend lint, tests, and build when frontend changes
 - Backend Ruff, Black check, and pytest when backend changes
 - Browser QC for visible UI work
+- For cockpit-state work, keep the five baseline screenshots current:
+  - `baseline-idle.png`
+  - `baseline-setup-loaded.png`
+  - `baseline-trade-entered.png`
+  - `baseline-protected.png`
+  - `baseline-profit-flow.png`
+
+## Promotion Rules
+
+- Keep `codex/integration-app` and `main` protected in GitHub
+- Use the release checklist in [`docs/process/RELEASE_PROMOTION_CHECKLIST.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/RELEASE_PROMOTION_CHECKLIST.md)
+- Use the staging playbook in [`docs/process/STAGING_RELEASE_PLAYBOOK.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/STAGING_RELEASE_PLAYBOOK.md)
+- Promote only reviewed, staged work into `main`
 
 ## Safety Defaults
 

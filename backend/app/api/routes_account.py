@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -17,10 +17,17 @@ def build_router(service: CockpitService) -> APIRouter:
 
     @router.put("/account/settings", response_model=AccountSettingsView)
     def update_account(payload: AccountSettingsUpdate, db: Session = Depends(get_db)) -> AccountSettingsView:
-        return service.update_account(db, payload)
+        try:
+            return service.update_account(db, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get("/activity-log", response_model=list[LogEntry])
     def get_logs(db: Session = Depends(get_db)) -> list[LogEntry]:
         return service.get_logs(db)
+
+    @router.delete("/activity-log")
+    def clear_logs(db: Session = Depends(get_db)) -> dict[str, int]:
+        return {"cleared": service.clear_logs(db)}
 
     return router

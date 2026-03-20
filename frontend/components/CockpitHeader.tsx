@@ -1,10 +1,13 @@
 import type { AccountView } from "@/lib/types";
+import { fp } from "@/lib/cockpit-ui";
 
 type Props = {
   ticker: string;
   onTickerChange: (value: string) => void;
   onLoad: () => void;
   onReset: () => void;
+  loadFlashing?: boolean;
+  resetFlashing?: boolean;
   phase: string;
   livePrice: number | null;
   delta: number;
@@ -13,7 +16,7 @@ type Props = {
 };
 
 export function CockpitHeader(props: Props) {
-  const { ticker, onTickerChange, onLoad, onReset, phase, livePrice, delta, deltaPct, account } = props;
+  const { ticker, onTickerChange, onLoad, onReset, loadFlashing = false, resetFlashing = false, phase, livePrice, delta, deltaPct, account } = props;
   return (
     <div className="header">
       <div className="logo">
@@ -30,26 +33,26 @@ export function CockpitHeader(props: Props) {
             onKeyDown={(event) => event.key === "Enter" && onLoad()}
             placeholder="AAPL"
             maxLength={6}
+            autoComplete="off"
           />
         </div>
-        <button className="btn btn-cyan" onClick={onLoad}>
-          LOAD SETUP
+        <button type="button" className={`btn btn-cyan ${loadFlashing ? "flash" : ""}`} onClick={onLoad}>
+          {"\u2193"} LOAD SETUP
         </button>
-        <button className="btn btn-ghost" onClick={onReset}>
+        <button type="button" className={`btn btn-ghost ${resetFlashing ? "flash" : ""}`} onClick={onReset}>
           RESET
         </button>
       </div>
-      <div className="badge badge-paper">{account?.mode?.includes("live") ? "LIVE" : "PAPER"}</div>
-      <div className={`state-display state-${phase.replace(/\s+/g, "_")}`}>{phase.replaceAll("_", " ").toUpperCase()}</div>
-      <div className="live-price">
-        {ticker ? `${ticker} ${livePrice?.toFixed(2) ?? "0.00"}` : ""}
-        {ticker ? (
-          <span className={`change ${delta >= 0 ? "up" : "dn"}`}>
-            {delta >= 0 ? "+" : ""}
-            {delta.toFixed(2)} ({deltaPct >= 0 ? "+" : ""}
-            {deltaPct.toFixed(2)}%)
-          </span>
-        ) : null}
+      <div className="badge badge-paper">{account?.effective_mode?.includes("live") ? "LIVE" : "\u25CF PAPER"}</div>
+      <div className={`state-display state-${phase}`}>{phase.replaceAll("_", " ").toUpperCase()}</div>
+      <div className="live-price" style={{ display: livePrice === null ? "none" : "block" }}>
+        <span>{ticker}</span>
+        <span> {fp(livePrice)}</span>
+        <span className={`change ${delta >= 0 ? "up" : "dn"}`}>
+          {delta >= 0 ? "+" : ""}
+          {fp(delta)} ({deltaPct >= 0 ? "+" : ""}
+          {deltaPct.toFixed(2)}%)
+        </span>
       </div>
     </div>
   );

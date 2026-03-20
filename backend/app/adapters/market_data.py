@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import httpx
 
@@ -44,6 +45,8 @@ MOCK_MARKET_DATA: dict[str, dict[str, float]] = {
 @dataclass
 class SetupMarketData:
     symbol: str
+    provider: str
+    quote_timestamp: datetime | None
     bid: float
     ask: float
     last: float
@@ -62,7 +65,12 @@ class SetupMarketData:
 class MockMarketDataAdapter:
     def get_setup_data(self, symbol: str) -> SetupMarketData:
         payload = MOCK_MARKET_DATA.get(symbol.upper(), MOCK_MARKET_DATA["AAPL"])
-        return SetupMarketData(symbol=symbol.upper(), **payload)
+        return SetupMarketData(
+            symbol=symbol.upper(),
+            provider="mock",
+            quote_timestamp=datetime.now(UTC),
+            **payload,
+        )
 
 
 class AlpacaPolygonMarketDataAdapter:
@@ -90,6 +98,8 @@ class AlpacaPolygonMarketDataAdapter:
             ask = float(quote.get("ap", fallback.ask))
             return SetupMarketData(
                 symbol=symbol.upper(),
+                provider="alpaca_quote",
+                quote_timestamp=datetime.now(UTC),
                 bid=bid,
                 ask=ask,
                 last=round((bid + ask) / 2, 2),

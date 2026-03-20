@@ -23,6 +23,19 @@ This repo follows a staged delivery flow modeled after `TradeCtrl`.
 - backend Ruff, Black check, and pytest when backend changes
 - visible UI changes should include browser QC evidence
 
+## Required PR Structure
+
+- feature PRs target `codex/integration-app`
+- promotion PRs target `main` and use `codex/integration-app` as the head branch
+- every PR links a GitHub issue or an explicit repo issue record in `docs/issues/`
+- PR descriptions must include scope, risks, and validation notes
+
+## Canonical Process Docs
+
+- [`docs/process/BRANCH_PROTECTION.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/BRANCH_PROTECTION.md)
+- [`docs/process/RELEASE_PROMOTION_CHECKLIST.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/RELEASE_PROMOTION_CHECKLIST.md)
+- [`docs/process/QC_CONVENTION.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/QC_CONVENTION.md)
+
 ## Durable Repo Memory
 
 Use repo docs for durable context. Do not depend on chat history as the only source of truth.

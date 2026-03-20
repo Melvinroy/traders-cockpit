@@ -61,6 +61,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         )
 
     def _client(self) -> httpx.Client:
+        self._ensure_execution_allowed()
         return httpx.Client(
             base_url=self.base_url,
             headers={
@@ -69,6 +70,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             },
             timeout=10.0,
         )
+
+    def _ensure_execution_allowed(self) -> None:
+        if self.settings.broker_mode != "alpaca_live":
+            return
+        if not self.settings.allow_live_trading:
+            raise ValueError("Live trading is disabled by config")
+        if not self.settings.live_confirmation_token:
+            raise ValueError("Live trading confirmation token is not configured")
 
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
