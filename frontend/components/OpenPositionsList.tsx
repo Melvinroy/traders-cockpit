@@ -1,5 +1,5 @@
 import type { PositionView } from "@/lib/types";
-import { activeShares, fp, isActivePhase, signedMoney } from "@/lib/cockpit-ui";
+import { activeShares, fp, isActivePhase, phaseLabel, signedMoney } from "@/lib/cockpit-ui";
 
 type Props = {
   positions: PositionView[];
@@ -83,7 +83,7 @@ export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) 
                   </div>
                   <div>
                     <div className="op-expand-label">Phase</div>
-                    <div className="op-val">{position.phase.replaceAll("_", " ").toUpperCase()}</div>
+                    <div className="op-val">{phaseLabel(position.phase)}</div>
                   </div>
                 </div>
               ) : null}
