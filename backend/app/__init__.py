@@ -1,0 +1,1 @@
+"""traders-cockpit backend."""

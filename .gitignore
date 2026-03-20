@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+.next/
+dist/
+coverage/
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env and logs
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+*.log
+
+# Runtime data
+backend/data/
+backend/*.egg-info/
+*.db
+*.sqlite
+*.sqlite3
+
+# Build output
+output/
+frontend/test-results/
+frontend/playwright-report/
