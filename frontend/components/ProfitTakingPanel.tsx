@@ -19,6 +19,8 @@ export function ProfitTakingPanel(props: Props) {
   const plannedShares = setup ? splitShares(setup.shares, trancheCount) : [];
   const activeQty = activePosition ? activeShares(activePosition) : 0;
   const soldQty = activePosition ? soldShares(activePosition) : 0;
+  const showExitPlan = Boolean(setup && activePosition);
+  const plannedSetup = showExitPlan ? setup : null;
 
   return (
     <div className="panel manage-panel">
@@ -36,8 +38,8 @@ export function ProfitTakingPanel(props: Props) {
       <div className="exit-plan-shell">
         <div className="section-label stop-plan-title">Exit Plan</div>
         <div className="exit-plan-content">
-          {!setup ? null : trancheModes.slice(0, trancheCount).map((mode, index) => {
-            const price = mode.mode === "runner" ? trailingStop(activePosition?.livePrice ?? setup.last, mode) : targetPrice(setup, mode);
+          {!plannedSetup ? null : trancheModes.slice(0, trancheCount).map((mode, index) => {
+            const price = mode.mode === "runner" ? trailingStop(activePosition?.livePrice ?? plannedSetup.last, mode) : targetPrice(plannedSetup, mode);
             const qty = plannedShares[index] ?? 0;
             return (
               <div className="exit-plan-line" key={`exit-${index}`}>
@@ -54,7 +56,7 @@ export function ProfitTakingPanel(props: Props) {
                 >
                   {mode.mode === "runner" ? "RUNNER" : "LIMIT"}
                 </button>
-                <span className="plan-pct">{qty ? `${Math.round((qty / setup.shares) * 100)}%` : "-"}</span>
+                <span className="plan-pct">{qty ? `${Math.round((qty / plannedSetup.shares) * 100)}%` : "-"}</span>
                 <span className="plan-price">{price !== null ? fp(price) : "-"}</span>
                 <span className="plan-qty">{qty} sh</span>
                 {mode.mode === "runner" ? (

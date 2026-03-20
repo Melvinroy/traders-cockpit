@@ -1129,6 +1129,13 @@ select {
   font-size: 8px;
 }
 
+.op-empty {
+  padding: 10px 0 2px;
+  color: var(--text3);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+
 .op-card {
   width: 100%;
   margin-bottom: 6px;

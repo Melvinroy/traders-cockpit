@@ -255,7 +255,6 @@ export function Cockpit() {
         />
         <StopProtectionPanel
           setup={setup}
-          phase={phase}
           stopMode={stopMode}
           stopModes={stopModes}
           tranches={activePosition?.tranches ?? []}

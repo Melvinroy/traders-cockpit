@@ -9,9 +9,6 @@ type Props = {
 
 export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) {
   const openPositions = positions.filter((position) => isActivePhase(position.phase));
-  if (!openPositions.length) {
-    return null;
-  }
 
   return (
     <div className="open-positions-section">
@@ -19,8 +16,9 @@ export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) 
         <span>
           Open Positions <span className="op-count">({openPositions.length})</span>
         </span>
-        <span className="op-live-badge">{"\u25CF"} LIVE</span>
+        <span className="op-live-badge">{openPositions.length ? "\u25CF LIVE" : "\u2014"}</span>
       </div>
+      {!openPositions.length ? <div className="op-empty">No open positions</div> : null}
       {openPositions.map((position) => {
         const live = position.livePrice || position.setup.entry;
         const activeQty = activeShares(position);
@@ -57,34 +55,36 @@ export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) 
                   <span className={`op-badge ${profitEnabled ? "op-badge-info" : "op-badge-off"}`}>PROFIT {profitEnabled ? "ON" : "-"}</span>
                 </div>
               </div>
-              <div className="op-expand">
-                <div>
-                  <div className="op-expand-label">Phase</div>
-                  <div className="op-val">{position.phase.replaceAll("_", " ").toUpperCase()}</div>
-                </div>
-                <div>
-                  <div className="op-expand-label">Shares</div>
-                  <div className="op-val">
-                    {activeQty} active / {soldShares(position)} sold
+              {isActive ? (
+                <div className="op-expand">
+                  <div>
+                    <div className="op-expand-label">Phase</div>
+                    <div className="op-val">{position.phase.replaceAll("_", " ").toUpperCase()}</div>
+                  </div>
+                  <div>
+                    <div className="op-expand-label">Shares</div>
+                    <div className="op-val">
+                      {activeQty} active / {soldShares(position)} sold
+                    </div>
+                  </div>
+                  <div className="op-tranche-pills">
+                    {position.tranches.map((tranche) => (
+                      <span
+                        key={tranche.id}
+                        className={`op-pill ${
+                          tranche.status === "sold"
+                            ? "op-pill-sold"
+                            : tranche.mode === "runner"
+                              ? "op-pill-runner"
+                              : "op-pill-active"
+                        }`}
+                      >
+                        {tranche.id}
+                      </span>
+                    ))}
                   </div>
                 </div>
-                <div className="op-tranche-pills">
-                  {position.tranches.map((tranche) => (
-                    <span
-                      key={tranche.id}
-                      className={`op-pill ${
-                        tranche.status === "sold"
-                          ? "op-pill-sold"
-                          : tranche.mode === "runner"
-                            ? "op-pill-runner"
-                            : "op-pill-active"
-                      }`}
-                    >
-                      {tranche.id}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              ) : null}
             </div>
           </button>
         );

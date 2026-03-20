@@ -3,7 +3,6 @@ import type { OrderView, SetupResponse, StopMode, Tranche } from "@/lib/types";
 
 type Props = {
   setup: SetupResponse | null;
-  phase: string;
   stopMode: number;
   stopModes: StopMode[];
   tranches: Tranche[];
@@ -16,9 +15,10 @@ type Props = {
 };
 
 export function StopProtectionPanel(props: Props) {
-  const { setup, phase, stopMode, stopModes, tranches, orders, onStopModeChange, onStopModeValueChange, onExecute, onMoveToBe, onFlatten } = props;
+  const { setup, stopMode, stopModes, tranches, orders, onStopModeChange, onStopModeValueChange, onExecute, onMoveToBe, onFlatten } = props;
   const rows = stopPlanRows(setup, tranches, stopMode, stopModes, orders);
   const hasTrade = tranches.length > 0;
+  const stopModeLabel = !hasTrade ? "" : stopMode === 1 ? "S1" : stopMode === 2 ? "S1\u00B7S2" : "S1\u00B7S2\u00B7S3";
 
   return (
     <div className="panel protect-panel">
@@ -30,7 +30,7 @@ export function StopProtectionPanel(props: Props) {
           <button type="button" className={`tranche-count-btn ${stopMode === 2 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(2)}>S1{"\u00B7"}S2</button>
           <button type="button" className={`tranche-count-btn ${stopMode === 3 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(3)}>S1{"\u00B7"}S2{"\u00B7"}S3</button>
           <button type="button" className="stop-ok-btn" disabled={!hasTrade} onClick={onExecute}>EXECUTE</button>
-          <div className="stop-mode-label">{hasTrade ? phase.replaceAll("_", " ").toUpperCase() : ""}</div>
+          <div className="stop-mode-label">{stopModeLabel}</div>
         </div>
       </div>
       <div className="stop-plan-shell">

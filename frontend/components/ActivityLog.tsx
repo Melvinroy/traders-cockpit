@@ -20,9 +20,12 @@ export function ActivityLog({ logs, onClear }: { logs: LogEntry[]; onClear: () =
             </div>
           ))
         ) : (
-          <div className="empty-state">
-            <div className="empty-icon">{"\u2022"}</div>
-            No activity yet
+          <div className="log-entry">
+            <div className="log-time">--:--:--</div>
+            <div className="log-msg">
+              <span className="tag tag-sys">SYS</span>
+              Cockpit initialized. Enter ticker to begin.
+            </div>
           </div>
         )}
       </div>

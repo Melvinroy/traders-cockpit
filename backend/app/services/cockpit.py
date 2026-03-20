@@ -374,6 +374,7 @@ class CockpitService:
         return [self._order_view(row) for row in rows]
 
     def get_logs(self, db: Session) -> list[LogEntry]:
+        self.ensure_seed_data(db)
         rows = db.scalars(select(TradeLogEntity).order_by(TradeLogEntity.created_at.desc()).limit(200)).all()
         return [LogEntry.model_validate(row, from_attributes=True) for row in rows]
 
