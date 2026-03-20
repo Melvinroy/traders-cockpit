@@ -45,6 +45,31 @@ See:
 
 ## Local Setup
 
+### Recommended Local Bootstrap
+
+```powershell
+.\scripts\dev\start-local.ps1
+```
+
+This starts:
+
+- PostgreSQL on `55432`
+- Redis on `56379`
+- Backend on `8010`
+- Frontend on `3010`
+
+To stop the local stack:
+
+```powershell
+.\scripts\dev\stop-local.ps1
+```
+
+To run the full local QC path, including browser smoke:
+
+```powershell
+.\scripts\dev\run-qc.ps1 -StartStack
+```
+
 ### Docker
 
 ```bash
@@ -59,6 +84,11 @@ Backend:
 
 - http://127.0.0.1:8000
 - http://127.0.0.1:8000/docs
+
+Infra host ports:
+
+- PostgreSQL: `55432`
+- Redis: `56379`
 
 ### Manual Backend
 
@@ -110,6 +140,8 @@ npm run lint
 npm run test
 npm run build
 ```
+
+Browser smoke evidence is written to `output/playwright/browser-smoke.png` when using `.\scripts\dev\run-qc.ps1`.
 
 ## OSS
 
