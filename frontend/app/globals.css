@@ -365,7 +365,6 @@ select {
 }
 
 .panel-title,
-.section-label,
 .kv-group-label,
 .op-section-label,
 .op-expand-label,
@@ -375,6 +374,18 @@ select {
   font-weight: 600;
   letter-spacing: 0.18em;
   color: var(--text2);
+  text-transform: uppercase;
+}
+
+.section-label {
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  color: var(--text3);
   text-transform: uppercase;
 }
 
@@ -741,7 +752,7 @@ select {
   text-align: right;
   color: var(--text2);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -776,7 +787,7 @@ select {
   align-items: center;
   gap: 10px;
   margin-bottom: 4px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   border: 1px solid var(--border2);
   border-radius: 3px;
   background: var(--bg2);
@@ -821,13 +832,13 @@ select {
 }
 
 .plan-price {
-  min-width: 58px;
+  min-width: 54px;
   color: var(--text1);
   font-size: 10px;
 }
 
 .plan-qty {
-  min-width: 52px;
+  min-width: 48px;
   color: var(--text1);
   font-size: 10px;
 }
@@ -846,6 +857,7 @@ select {
   font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .plan-status-live {
@@ -887,6 +899,10 @@ select {
   padding: 12px 14px;
 }
 
+.manage-section-label {
+  margin-top: 2px;
+}
+
 .tranche-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -909,7 +925,7 @@ select {
 .tranche-card.sold,
 .tranche-card.canceled {
   border-color: var(--border);
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .tranche-label,
@@ -1025,6 +1041,10 @@ select {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.pos-item-label {
+  letter-spacing: 0.1em;
 }
 
 .pos-item-val {

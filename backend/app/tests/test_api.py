@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 db_path = Path(__file__).resolve().parent / "test.db"
 if db_path.exists():
     db_path.unlink()
@@ -13,11 +15,22 @@ os.environ["AUTH_REQUIRE_LOGIN"] = "false"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.db.base import Base  # noqa: E402
-from app.db.session import engine  # noqa: E402
+from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models.entities import OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_db() -> None:
+    with SessionLocal() as db:
+        db.query(OrderEntity).delete()
+        db.query(PositionEntity).delete()
+        db.query(TradeLogEntity).delete()
+        db.commit()
+    yield
 
 
 def tranche_modes() -> list[dict]:

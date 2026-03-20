@@ -26,6 +26,7 @@ export function ProfitTakingPanel(props: Props) {
   const visibleTranches = activePosition
     ? tranches.filter((tranche) => tranche.status === "sold" || tranche.status === "canceled" || (tranche.id === "T3" && activePosition.phase === "runner_only"))
     : [];
+  const showManageState = Boolean(activePosition);
 
   return (
     <div className="panel manage-panel">
@@ -110,7 +111,7 @@ export function ProfitTakingPanel(props: Props) {
         </div>
       </div>
       <div className="manage-scroll">
-        <div className="section-label" style={{ display: activePosition ? "block" : "none" }}>Exits</div>
+        <div className="section-label manage-section-label" style={{ display: showManageState ? "block" : "none" }}>Exits</div>
         {activePosition ? (
           <>
             <div className="tranche-grid">
@@ -143,7 +144,7 @@ export function ProfitTakingPanel(props: Props) {
               <div className="pos-item"><div className="pos-item-label">Entry</div><div className="pos-item-val">{fp(setup?.entry)}</div></div>
               <div className="pos-item"><div className="pos-item-label">Notional</div><div className="pos-item-val">{f2((setup?.entry ?? 0) * activeQty)}</div></div>
             </div>
-            <div className="section-label">Orders</div>
+            <div className="section-label manage-section-label">Orders</div>
             <OrdersBlotter orders={orders} />
           </>
         ) : (
