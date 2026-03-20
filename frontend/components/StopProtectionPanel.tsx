@@ -57,7 +57,7 @@ export function StopProtectionPanel(props: Props) {
                     type="number"
                     inputMode="decimal"
                     className="pct-input"
-                    value={Number((mode.pct ?? 100).toFixed(2))}
+                    value={Number((mode.pct ?? row.pct).toFixed(2))}
                     disabled={isBreakeven}
                     onChange={(event) => onStopModeValueChange(index, { ...mode, pct: Number(event.target.value) })}
                   />

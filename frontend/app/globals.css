@@ -49,6 +49,10 @@ body {
   overflow-x: hidden;
 }
 
+nextjs-portal {
+  display: none !important;
+}
+
 button,
 input,
 select {

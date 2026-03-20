@@ -12,9 +12,9 @@ import { api } from "@/lib/api";
 import type { AccountView, LogEntry, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
 
 const DEFAULT_STOP_MODES: StopMode[] = [
-  { mode: "stop", pct: 33 },
-  { mode: "stop", pct: 66 },
-  { mode: "stop", pct: 100 }
+  { mode: "stop", pct: null },
+  { mode: "stop", pct: null },
+  { mode: "stop", pct: null }
 ];
 
 const DEFAULT_TRANCHE_MODES: TrancheMode[] = [
@@ -39,6 +39,7 @@ export function Cockpit() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const activeSymbolRef = useRef("");
+  const setupLoadedRef = useRef(false);
 
   const activePosition = useMemo(
     () => positions.find((position) => position.symbol === activeSymbol) ?? null,
@@ -53,7 +54,33 @@ export function Cockpit() {
     activeSymbolRef.current = activeSymbol;
   }, [activeSymbol]);
 
-  const hydrate = useCallback(async () => {
+  useEffect(() => {
+    setupLoadedRef.current = Boolean(setup);
+  }, [setup]);
+
+  const subscribePrice = useCallback((symbol: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ action: "subscribe_price", symbol }));
+    }
+  }, []);
+
+  const applyPositionState = useCallback((position: PositionView) => {
+    activeSymbolRef.current = position.symbol;
+    setupLoadedRef.current = true;
+    setActiveSymbol(position.symbol);
+    setTicker(position.symbol);
+    setSetup(position.setup as SetupResponse);
+    setEntryPrice(position.setup.entry);
+    setManualStop(position.setup.finalStop);
+    setStopMode(position.stopMode || 3);
+    setStopModes(position.stopModes.length ? position.stopModes : DEFAULT_STOP_MODES);
+    setTrancheCount(position.trancheCount || 3);
+    setTrancheModes(position.trancheModes.length ? position.trancheModes : DEFAULT_TRANCHE_MODES);
+    subscribePrice(position.symbol);
+  }, [subscribePrice]);
+
+  const hydrate = useCallback(async (options?: { autoSelectFirst?: boolean }) => {
+    const autoSelectFirst = options?.autoSelectFirst ?? false;
     const [accountView, positionRows, logRows] = await Promise.all([
       api.getAccount(),
       api.getPositions(),
@@ -66,54 +93,24 @@ export function Cockpit() {
     if (activeSymbolRef.current) {
       const active = positionRows.find((position) => position.symbol === activeSymbolRef.current);
       if (active) {
-        setSetup(active.setup as SetupResponse);
-        setEntryPrice(active.setup.entry);
-        setManualStop(active.setup.finalStop);
-        setStopMode(active.stopMode || 3);
-        setStopModes(active.stopModes.length ? active.stopModes : DEFAULT_STOP_MODES);
-        setTrancheCount(active.trancheCount || 3);
-        setTrancheModes(active.trancheModes.length ? active.trancheModes : DEFAULT_TRANCHE_MODES);
+        applyPositionState(active);
         return;
       }
     }
 
-    if (!activeSymbolRef.current && positionRows[0]) {
-      const first = positionRows[0];
-      setActiveSymbol(first.symbol);
-      setTicker(first.symbol);
-      setSetup(first.setup as SetupResponse);
-      setEntryPrice(first.setup.entry);
-      setManualStop(first.setup.finalStop);
-      setStopMode(first.stopMode || 3);
-      setStopModes(first.stopModes.length ? first.stopModes : DEFAULT_STOP_MODES);
-      setTrancheCount(first.trancheCount || 3);
-      setTrancheModes(first.trancheModes.length ? first.trancheModes : DEFAULT_TRANCHE_MODES);
+    if (autoSelectFirst && !activeSymbolRef.current && !setupLoadedRef.current && positionRows[0]) {
+      applyPositionState(positionRows[0]);
     }
-  }, []);
-
-  const subscribePrice = useCallback((symbol: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ action: "subscribe_price", symbol }));
-    }
-  }, []);
+  }, [applyPositionState]);
 
   const selectPosition = useCallback((symbol: string, source: PositionView[] = positions) => {
     const position = source.find((item) => item.symbol === symbol);
     if (!position) return;
-    setActiveSymbol(symbol);
-    setTicker(symbol);
-    setSetup(position.setup as SetupResponse);
-    setEntryPrice(position.setup.entry);
-    setManualStop(position.setup.finalStop);
-    setStopMode(position.stopMode || 3);
-    setStopModes(position.stopModes.length ? position.stopModes : DEFAULT_STOP_MODES);
-    setTrancheCount(position.trancheCount || 3);
-    setTrancheModes(position.trancheModes.length ? position.trancheModes : DEFAULT_TRANCHE_MODES);
-    subscribePrice(symbol);
-  }, [positions, subscribePrice]);
+    applyPositionState(position);
+  }, [applyPositionState, positions]);
 
   useEffect(() => {
-    void hydrate();
+    void hydrate({ autoSelectFirst: true });
   }, [hydrate]);
 
   useEffect(() => {
@@ -137,7 +134,7 @@ export function Cockpit() {
         );
       }
       if (payload.type === "position_update") {
-        void hydrate();
+        void hydrate({ autoSelectFirst: Boolean(activeSymbolRef.current) });
       }
     };
     return () => ws.close();
@@ -145,12 +142,16 @@ export function Cockpit() {
 
   async function loadSetup() {
     const nextSetup = await api.getSetup(ticker);
+    activeSymbolRef.current = "";
+    setupLoadedRef.current = true;
     setSetup(nextSetup);
     setEntryPrice(nextSetup.entry);
     setManualStop(nextSetup.finalStop);
     setActiveSymbol("");
+    setStopMode(0);
+    setStopModes(DEFAULT_STOP_MODES);
     subscribePrice(ticker);
-    await hydrate();
+    await hydrate({ autoSelectFirst: false });
   }
 
   async function previewTrade() {
@@ -162,7 +163,7 @@ export function Cockpit() {
       stopPrice: stopRef === "manual" ? manualStop : setup.finalStop,
       riskPct: account?.risk_pct ?? setup.riskPct
     });
-    await hydrate();
+    await hydrate({ autoSelectFirst: false });
   }
 
   async function enterTrade() {
@@ -175,7 +176,8 @@ export function Cockpit() {
       trancheCount,
       trancheModes
     });
-    await hydrate();
+    setStopMode((current) => current || 3);
+    await hydrate({ autoSelectFirst: false });
     selectPosition(position.symbol, [position, ...positions]);
   }
 
@@ -183,7 +185,7 @@ export function Cockpit() {
     const symbol = activeSymbol || ticker;
     if (!symbol) return;
     const position = await api.applyStops({ symbol, stopMode, stopModes });
-    await hydrate();
+    await hydrate({ autoSelectFirst: false });
     selectPosition(position.symbol);
   }
 
@@ -191,29 +193,30 @@ export function Cockpit() {
     const symbol = activeSymbol || ticker;
     if (!symbol) return;
     const position = await api.executeProfit({ symbol, trancheModes });
-    await hydrate();
+    await hydrate({ autoSelectFirst: false });
     selectPosition(position.symbol);
   }
 
   async function moveToBe() {
     if (!activeSymbol) return;
     const position = await api.moveToBe(activeSymbol);
-    await hydrate();
+    await hydrate({ autoSelectFirst: false });
     selectPosition(position.symbol);
   }
 
   async function flatten() {
     if (!activeSymbol) return;
     const position = await api.flatten(activeSymbol);
-    await hydrate();
+    await hydrate({ autoSelectFirst: false });
     if (position.phase === "closed") {
+      activeSymbolRef.current = "";
       setActiveSymbol("");
     }
   }
 
   async function clearLogs() {
     await api.clearLogs();
-    await hydrate();
+    await hydrate({ autoSelectFirst: false });
   }
 
   return (
@@ -223,6 +226,8 @@ export function Cockpit() {
         onTickerChange={setTicker}
         onLoad={() => void loadSetup()}
         onReset={() => {
+          activeSymbolRef.current = "";
+          setupLoadedRef.current = false;
           setSetup(null);
           setActiveSymbol("");
           setTicker("AAPL");
@@ -232,7 +237,7 @@ export function Cockpit() {
           setStopModes(DEFAULT_STOP_MODES);
           setTrancheCount(3);
           setTrancheModes(DEFAULT_TRANCHE_MODES);
-          void hydrate();
+          void hydrate({ autoSelectFirst: false });
         }}
         phase={phase}
         livePrice={livePrice}

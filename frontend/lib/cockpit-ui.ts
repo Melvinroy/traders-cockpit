@@ -19,7 +19,12 @@ export function signedMoney(value: number): string {
 }
 
 export function formatLogTime(value: string): string {
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date(value).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
 }
 
 export function splitShares(total: number, count: number): number[] {
@@ -81,8 +86,8 @@ export function stopPlanRows(
   return stopGroups(previewTranches, modeCount).map((group, index) => {
     const config = stopModes[index] ?? { mode: "stop", pct: null };
     const autoPct = index === modeCount - 1
-      ? 100
-      : Math.floor((100 / modeCount) * (index + 1));
+      ? 100 - Math.floor(100 / modeCount) * index
+      : Math.floor(100 / modeCount);
     const pct = config.mode === "be" ? 0 : (config.pct ?? autoPct);
     const price = config.mode === "be" ? setup.entry : Number((setup.entry - range * pct / 100).toFixed(2));
     const qty = group.reduce((sum, tranche) => sum + tranche.qty, 0);
