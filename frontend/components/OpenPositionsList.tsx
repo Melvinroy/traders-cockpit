@@ -62,6 +62,31 @@ export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) 
                   <span className={`op-badge ${isProfitEnabled ? "op-badge-info" : "op-badge-off"}`}>PROFIT {isProfitEnabled ? "ON" : "\u2014"}</span>
                 </div>
               </div>
+              {isActive ? (
+                <div className="op-expand">
+                  <div>
+                    <div className="op-expand-label">Tranches</div>
+                    <div className="op-tranche-pills">
+                      {position.tranches.map((tranche) => {
+                        const pillClass = tranche.status === "sold"
+                          ? "op-pill-sold"
+                          : tranche.mode === "runner"
+                            ? "op-pill-runner"
+                            : "op-pill-active";
+                        return (
+                          <span key={tranche.id} className={`op-pill ${pillClass}`}>
+                            {tranche.id}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="op-expand-label">Phase</div>
+                    <div className="op-val">{position.phase.replaceAll("_", " ").toUpperCase()}</div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </button>
         );
