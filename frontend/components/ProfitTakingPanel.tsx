@@ -36,7 +36,7 @@ export function ProfitTakingPanel(props: Props) {
           <button type="button" className={`tranche-count-btn ${trancheCount === 1 ? "active" : ""}`} onClick={() => onTrancheCountChange(1)}>P1</button>
           <button type="button" className={`tranche-count-btn ${trancheCount === 2 ? "active" : ""}`} onClick={() => onTrancheCountChange(2)}>P1{"\u00B7"}P2</button>
           <button type="button" className={`tranche-count-btn ${trancheCount === 3 ? "active" : ""}`} onClick={() => onTrancheCountChange(3)}>P1{"\u00B7"}P2{"\u00B7"}P3</button>
-          <button type="button" className="stop-ok-btn" disabled={!canExecuteProfit} onClick={onExecute}>EXECUTE</button>
+          <button type="button" className={`stop-ok-btn ${canExecuteProfit ? "stop-ok-ready" : ""}`} disabled={!canExecuteProfit} onClick={onExecute}>EXECUTE</button>
           <div className="position-summary-header">{activePosition ? `${activeQty}sh active / ${soldQty}sh sold` : "No position"}</div>
         </div>
       </div>

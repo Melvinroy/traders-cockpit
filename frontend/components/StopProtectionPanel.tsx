@@ -30,7 +30,7 @@ export function StopProtectionPanel(props: Props) {
           <button type="button" className={`tranche-count-btn ${stopMode === 1 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(1)}>S1</button>
           <button type="button" className={`tranche-count-btn ${stopMode === 2 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(2)}>S1{"\u00B7"}S2</button>
           <button type="button" className={`tranche-count-btn ${stopMode === 3 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(3)}>S1{"\u00B7"}S2{"\u00B7"}S3</button>
-          <button type="button" className="stop-ok-btn" disabled={!hasTrade} onClick={onExecute}>EXECUTE</button>
+          <button type="button" className={`stop-ok-btn ${hasTrade ? "stop-ok-ready" : ""}`} disabled={!hasTrade} onClick={onExecute}>EXECUTE</button>
           <div className="stop-mode-label">{stopModeLabel}</div>
         </div>
       </div>
