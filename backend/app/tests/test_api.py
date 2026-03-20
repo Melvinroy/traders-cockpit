@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy import select
 
 db_path = Path(__file__).resolve().parent / "test.db"
 if db_path.exists():
@@ -165,3 +167,66 @@ def test_runner_cannot_be_reexecuted_once_active() -> None:
     second_profit = client.post("/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()})
     assert second_profit.status_code == 400
     assert "Active TRAIL order already exists" in second_profit.text
+
+
+def test_enter_trade_recovers_stale_active_orders_for_closed_symbol() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+
+    with SessionLocal() as db:
+        db.add(
+            PositionEntity(
+                symbol="AAPL",
+                phase="closed",
+                entry_price=setup["entry"],
+                live_price=setup["last"],
+                shares=setup["shares"],
+                stop_ref="lod",
+                stop_price=setup["finalStop"],
+                tranche_count=3,
+                tranche_modes=tranche_modes(),
+                stop_modes=[{"mode": "stop", "pct": None} for _ in range(3)],
+                tranches=[],
+                setup_snapshot=setup,
+                root_order_id="ORD-0001",
+            )
+        )
+        db.add(
+            OrderEntity(
+                order_id="ORD-0002",
+                broker_order_id="paper-stale",
+                symbol="AAPL",
+                type="STOP",
+                qty=10,
+                orig_qty=10,
+                price=setup["finalStop"],
+                status="ACTIVE",
+                tranche_label="S1",
+                covered_tranches=["T1"],
+                parent_id="ORD-0001",
+            )
+        )
+        db.commit()
+
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+        },
+    )
+    assert enter.status_code == 200
+
+    with SessionLocal() as db:
+        stale = db.scalar(select(OrderEntity).where(OrderEntity.order_id == "ORD-0002"))
+        assert stale is not None
+        assert stale.status == "CANCELED"
+        messages = [row.message for row in db.scalars(select(TradeLogEntity).order_by(TradeLogEntity.created_at.asc())).all()]
+        assert any("Recovered stale active orders" in message for message in messages)

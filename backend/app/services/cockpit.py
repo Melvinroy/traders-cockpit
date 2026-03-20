@@ -536,6 +536,7 @@ class CockpitService:
         open_positions = [row for row in self.get_positions(db) if row.phase != "closed"]
         if len(open_positions) >= self.settings.max_open_positions:
             raise ValueError("Max open positions reached")
+        self._cancel_stale_active_orders(db, symbol)
         active = db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.status.in_(["ACTIVE", "MODIFIED"]))).all()
         if active:
             raise ValueError("Duplicate active orders exist for this symbol")
@@ -559,11 +560,13 @@ class CockpitService:
             raise ValueError("Profit tranche configuration is incomplete")
 
     def _reject_duplicate_active_stops(self, db: Session, symbol: str) -> None:
+        self._cancel_stale_active_orders(db, symbol)
         active = db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.type == "STOP", OrderEntity.status.in_(["ACTIVE", "MODIFIED"]))).all()
         if active:
             raise ValueError("Active stop orders already exist for this symbol")
 
     def _reject_duplicate_active_order(self, db: Session, symbol: str, tranche_id: str, order_type: str) -> None:
+        self._cancel_stale_active_orders(db, symbol)
         active = db.scalars(
             select(OrderEntity).where(
                 OrderEntity.symbol == symbol,
@@ -573,6 +576,25 @@ class CockpitService:
         ).all()
         if any(tranche_id in (order.covered_tranches or []) or order.tranche_label == tranche_id for order in active):
             raise ValueError(f"Active {order_type} order already exists for {tranche_id}")
+
+    def _cancel_stale_active_orders(self, db: Session, symbol: str) -> None:
+        position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol))
+        if position is not None and position.phase != "closed" and any(
+            tranche["status"] == "active" for tranche in position.tranches
+        ):
+            return
+        stale_orders = db.scalars(
+            select(OrderEntity).where(
+                OrderEntity.symbol == symbol,
+                OrderEntity.status.in_(["ACTIVE", "MODIFIED"]),
+            )
+        ).all()
+        if not stale_orders:
+            return
+        for order in stale_orders:
+            order.status = "CANCELED"
+        self._log(db, symbol, "sys", "Recovered stale active orders before new trade entry.")
+        db.flush()
 
     def _require_position(self, db: Session, symbol: str) -> PositionEntity:
         position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol.upper()))
@@ -652,7 +674,14 @@ class CockpitService:
         }
 
     def _next_order_id(self, db: Session) -> str:
-        persisted_max = db.scalar(select(func.max(OrderEntity.id))) or 0
+        persisted_max = 0
+        for order_id in db.scalars(select(OrderEntity.order_id)):
+            if not order_id.startswith("ORD-"):
+                continue
+            try:
+                persisted_max = max(persisted_max, int(order_id.split("-", 1)[1]))
+            except ValueError:
+                continue
         pending_max = 0
         for instance in db.new:
             if isinstance(instance, OrderEntity) and instance.order_id.startswith("ORD-"):

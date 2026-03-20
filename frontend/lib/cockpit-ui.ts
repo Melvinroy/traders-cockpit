@@ -11,11 +11,11 @@ export function fp(value: number | null | undefined): string {
 }
 
 export function f2(value: number | null | undefined): string {
-  return Number.isFinite(value) ? Number(value).toFixed(2) : "--";
+  return Number.isFinite(value) ? `$${Number(value).toFixed(2)}` : "--";
 }
 
 export function signedMoney(value: number): string {
-  return `${value >= 0 ? "+" : ""}${f2(value)}`;
+  return `${value >= 0 ? "+" : "-"}${f2(Math.abs(value))}`;
 }
 
 export function formatLogTime(value: string): string {
