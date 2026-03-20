@@ -100,20 +100,23 @@ export function Cockpit() {
       api.getPositions(),
       api.getLogs()
     ]);
+    const openPositions = positionRows.filter((position) => ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase));
     setAccount(accountView);
     setPositions(positionRows);
     setLogs(logRows);
 
     if (activeSymbolRef.current) {
-      const active = positionRows.find((position) => position.symbol === activeSymbolRef.current);
+      const active = openPositions.find((position) => position.symbol === activeSymbolRef.current);
       if (active) {
         applyPositionState(active);
         return;
       }
+      activeSymbolRef.current = "";
+      setActiveSymbol("");
     }
 
-    if (autoSelectFirst && !activeSymbolRef.current && !setupLoadedRef.current && positionRows[0]) {
-      applyPositionState(positionRows[0]);
+    if (autoSelectFirst && !activeSymbolRef.current && !setupLoadedRef.current && openPositions[0]) {
+      applyPositionState(openPositions[0]);
     }
   }, [applyPositionState]);
 
