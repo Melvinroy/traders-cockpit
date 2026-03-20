@@ -31,7 +31,7 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
       <div className="panel-body" id="setupBody">
         {!setup ? (
           <div className="empty-state">
-            <div className="empty-icon">{"\u2291"}</div>
+            <div className="empty-icon">{"\u22A1"}</div>
             Enter ticker and load setup
           </div>
         ) : (
