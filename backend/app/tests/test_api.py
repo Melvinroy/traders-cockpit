@@ -78,6 +78,10 @@ def test_trade_lifecycle() -> None:
     profit_state = profit.json()
     assert profit_state["phase"] in {"P2_done", "runner_only", "closed"}
     assert len(profit_state["orders"]) >= 4
+    assert all(
+        order["id"] == profit_state["rootOrderId"] or order.get("parentId") == profit_state["rootOrderId"]
+        for order in profit_state["orders"]
+    )
 
 
 def test_account_update() -> None:

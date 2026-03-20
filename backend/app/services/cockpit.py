@@ -370,7 +370,20 @@ class CockpitService:
         return self._position_view(db, self._require_position(db, symbol))
 
     def get_orders(self, db: Session, symbol: str) -> list[OrderView]:
-        rows = db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol.upper()).order_by(OrderEntity.created_at.asc())).all()
+        position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol.upper()))
+        if position is not None and position.root_order_id:
+            rows = db.scalars(
+                select(OrderEntity)
+                .where(
+                    OrderEntity.symbol == symbol.upper(),
+                    (OrderEntity.order_id == position.root_order_id) | (OrderEntity.parent_id == position.root_order_id),
+                )
+                .order_by(OrderEntity.created_at.asc())
+            ).all()
+        else:
+            rows = db.scalars(
+                select(OrderEntity).where(OrderEntity.symbol == symbol.upper()).order_by(OrderEntity.created_at.asc())
+            ).all()
         return [self._order_view(row) for row in rows]
 
     def get_logs(self, db: Session) -> list[LogEntry]:

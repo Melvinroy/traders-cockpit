@@ -40,6 +40,7 @@ export function Cockpit() {
   const wsRef = useRef<WebSocket | null>(null);
   const activeSymbolRef = useRef("");
   const setupLoadedRef = useRef(false);
+  const initialAutoloadRef = useRef(false);
 
   const activePosition = useMemo(
     () => positions.find((position) => position.symbol === activeSymbol) ?? null,
@@ -140,7 +141,7 @@ export function Cockpit() {
     return () => ws.close();
   }, [hydrate]);
 
-  async function loadSetup() {
+  const loadSetup = useCallback(async () => {
     const nextSetup = await api.getSetup(ticker);
     activeSymbolRef.current = "";
     setupLoadedRef.current = true;
@@ -152,7 +153,18 @@ export function Cockpit() {
     setStopModes(DEFAULT_STOP_MODES);
     subscribePrice(ticker);
     await hydrate({ autoSelectFirst: false });
-  }
+  }, [hydrate, subscribePrice, ticker]);
+
+  useEffect(() => {
+    if (initialAutoloadRef.current) return;
+    if (!account) return;
+    if (setup || positions.length > 0 || activeSymbolRef.current) {
+      initialAutoloadRef.current = true;
+      return;
+    }
+    initialAutoloadRef.current = true;
+    void loadSetup();
+  }, [account, loadSetup, positions.length, setup]);
 
   async function commitRiskPct(nextRiskPct: number) {
     if (!account) return;
