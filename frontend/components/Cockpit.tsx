@@ -165,7 +165,7 @@ export function Cockpit() {
     setEntryPrice(nextSetup.entry);
     setManualStop(nextSetup.finalStop);
     setActiveSymbol("");
-    setStopMode(0);
+    setStopMode(3);
     setStopModes(DEFAULT_STOP_MODES);
     subscribePrice(ticker);
     await hydrate({ autoSelectFirst: false });
@@ -282,7 +282,7 @@ export function Cockpit() {
           setupLoadedRef.current = false;
           setSetup(null);
           setActiveSymbol("");
-          setTicker("AAPL");
+          setTicker("");
           setEntryPrice(0);
           setManualStop(0);
           setStopMode(3);

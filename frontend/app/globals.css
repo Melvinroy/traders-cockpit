@@ -764,13 +764,28 @@ select {
   box-shadow: 0 0 10px rgba(0, 208, 122, 0.5);
 }
 
-.stop-mode-label,
-.position-summary-header {
+.stop-ok-ready:hover:not(:disabled) {
+  background: #13e18a;
+  border-color: #13e18a;
+  box-shadow: 0 0 12px rgba(0, 208, 122, 0.65);
+}
+
+.stop-mode-label {
   overflow: hidden;
   text-align: right;
   color: var(--text2);
   font-family: "IBM Plex Mono", monospace;
   font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.position-summary-header {
+  overflow: hidden;
+  text-align: right;
+  color: var(--text2);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -792,6 +807,10 @@ select {
   letter-spacing: 0;
   text-transform: none;
   color: var(--text3);
+}
+
+.stop-plan-title .section-hint {
+  font-size: 8px;
 }
 
 .stop-plan-content,
