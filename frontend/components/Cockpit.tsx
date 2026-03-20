@@ -175,13 +175,16 @@ export function Cockpit() {
   useEffect(() => {
     if (initialAutoloadRef.current) return;
     if (!account) return;
-    if (setup || positions.length > 0 || activeSymbolRef.current) {
+    const hasActivePosition = positions.some((position) =>
+      ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase)
+    );
+    if (setup || hasActivePosition || activeSymbolRef.current) {
       initialAutoloadRef.current = true;
       return;
     }
     initialAutoloadRef.current = true;
     void loadSetup();
-  }, [account, loadSetup, positions.length, setup]);
+  }, [account, loadSetup, positions, setup]);
 
   async function commitRiskPct(nextRiskPct: number) {
     if (!account) return;

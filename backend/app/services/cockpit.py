@@ -720,7 +720,11 @@ class CockpitService:
 
     def _position_view(self, db: Session, row: PositionEntity) -> PositionView:
         orders = self.get_orders(db, row.symbol)
-        active_stops = [order for order in orders if order.type == "STOP" and order.status in {"ACTIVE", "MODIFIED"}]
+        committed_stop_labels = {
+            order.tranche
+            for order in orders
+            if order.type == "STOP" and order.tranche.startswith("S")
+        }
         return PositionView(
             symbol=row.symbol,
             phase=row.phase,
@@ -731,7 +735,7 @@ class CockpitService:
             trancheModes=[TrancheMode.model_validate(item) for item in row.tranche_modes],
             stopModes=[StopMode.model_validate(item) for item in row.stop_modes],
             rootOrderId=row.root_order_id,
-            stopMode=len(active_stops),
+            stopMode=len(committed_stop_labels),
             trancheCount=row.tranche_count,
         )
 
