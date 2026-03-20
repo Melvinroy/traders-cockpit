@@ -117,10 +117,13 @@ try {
   Start-FrontendDev -Port $FrontendPort
   Invoke-BrowserSmoke -Url "http://127.0.0.1:$FrontendPort" -Label "dev-smoke-final"
   $env:FRONTEND_URL = "http://127.0.0.1:$FrontendPort"
+  $env:BACKEND_URL = "http://127.0.0.1:$BackendPort"
   node ..\scripts\dev\fidelity-baselines.mjs
+  node ..\scripts\dev\trade-flow-qc.mjs
 } finally {
   Remove-Item Env:FRONTEND_URL -ErrorAction SilentlyContinue
   Remove-Item Env:BROWSER_SMOKE_LABEL -ErrorAction SilentlyContinue
+  Remove-Item Env:BACKEND_URL -ErrorAction SilentlyContinue
   Remove-Item Env:NEXT_PUBLIC_API_BASE_URL -ErrorAction SilentlyContinue
   Remove-Item Env:NEXT_PUBLIC_WS_URL -ErrorAction SilentlyContinue
   Pop-Location
