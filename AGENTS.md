@@ -37,6 +37,12 @@ Use these folders when needed:
 - Backend Ruff, Black check, and pytest when backend changes
 - Browser QC for visible UI work
 
+## Promotion Rules
+
+- Keep `codex/integration-app` and `main` protected in GitHub
+- Use the release checklist in [`docs/process/RELEASE_PROMOTION_CHECKLIST.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/RELEASE_PROMOTION_CHECKLIST.md)
+- Promote only reviewed, staged work into `main`
+
 ## Safety Defaults
 
 - Paper mode first

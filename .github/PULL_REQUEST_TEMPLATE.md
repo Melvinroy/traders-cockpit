@@ -32,6 +32,13 @@ If visible UI changed, note where evidence was captured:
 - `output/...`
 - `frontend/test-results/...`
 
+## Promotion Checklist
+
+- [ ] Target branch is correct for this PR
+- [ ] Linked issue or repo issue record is included
+- [ ] Required checks are green
+- [ ] Risks and rollback path are documented
+
 ## Follow-Up
 
 - Follow-up 1:
