@@ -63,11 +63,27 @@ export function stopPlanRows(
   stopModes: StopMode[],
   orders: OrderView[]
 ): Array<{ label: string; qty: number; price: number; pct: number; mode: StopMode["mode"]; status: string }> {
-  if (!setup || !tranches.length) return [];
+  if (!setup) return [];
+  const modeCount = stopMode || 3;
+  const previewTranches = tranches.length
+    ? tranches
+    : splitShares(setup.shares, modeCount).map((qty, index) => ({
+        id: `T${index + 1}`,
+        qty,
+        stop: setup.finalStop,
+        status: "active" as const,
+        mode: "limit" as const,
+        trail: 2,
+        trailUnit: "$" as const,
+        label: `Tranche ${index + 1}`
+      }));
   const range = setup.entry - setup.finalStop;
-  return stopGroups(tranches, stopMode).map((group, index) => {
+  return stopGroups(previewTranches, modeCount).map((group, index) => {
     const config = stopModes[index] ?? { mode: "stop", pct: null };
-    const pct = config.mode === "be" ? 0 : (config.pct ?? 100);
+    const autoPct = index === modeCount - 1
+      ? 100
+      : Math.floor((100 / modeCount) * (index + 1));
+    const pct = config.mode === "be" ? 0 : (config.pct ?? autoPct);
     const price = config.mode === "be" ? setup.entry : Number((setup.entry - range * pct / 100).toFixed(2));
     const qty = group.reduce((sum, tranche) => sum + tranche.qty, 0);
     const activeOrder = orders.find(

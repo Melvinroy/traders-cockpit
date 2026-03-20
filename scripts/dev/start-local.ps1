@@ -65,6 +65,20 @@ Start-Process -FilePath "cmd.exe" `
 
 Wait-ForHttp -Url "http://127.0.0.1:$BackendPort/health"
 
+$defaultEquity = 100000
+$defaultRiskPct = 1
+$accountBody = @{
+  equity = $defaultEquity
+  risk_pct = $defaultRiskPct
+  mode = "paper"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Put `
+  -Uri "http://127.0.0.1:$BackendPort/api/account/settings" `
+  -ContentType "application/json" `
+  -Body $accountBody | Out-Null
+
 $frontendCmd = @(
   "set ""NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:$BackendPort""",
   "set ""NEXT_PUBLIC_WS_URL=ws://127.0.0.1:$BackendPort/ws/cockpit""",

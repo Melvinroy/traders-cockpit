@@ -17,6 +17,7 @@ type Props = {
 export function StopProtectionPanel(props: Props) {
   const { setup, stopMode, stopModes, tranches, orders, onStopModeChange, onStopModeValueChange, onExecute, onMoveToBe, onFlatten } = props;
   const rows = stopPlanRows(setup, tranches, stopMode, stopModes, orders);
+  const hasSetup = Boolean(setup);
   const hasTrade = tranches.length > 0;
   const stopModeLabel = !hasTrade ? "" : stopMode === 1 ? "S1" : stopMode === 2 ? "S1\u00B7S2" : "S1\u00B7S2\u00B7S3";
 
@@ -35,10 +36,10 @@ export function StopProtectionPanel(props: Props) {
       </div>
       <div className="stop-plan-shell">
         <div className="section-label stop-plan-title">
-          Stop Plan <span className="section-hint">{hasTrade ? "" : "- enter trade first"}</span>
+          Stop Plan <span className="section-hint">{hasTrade ? "" : hasSetup ? "- enter trade first" : ""}</span>
         </div>
         <div className="stop-plan-content">
-          {!hasTrade ? null : rows.map((row, index) => {
+          {!hasSetup ? null : rows.map((row, index) => {
             const mode = stopModes[index] ?? { mode: "stop", pct: 100 };
             const isBreakeven = mode.mode === "be";
             return (

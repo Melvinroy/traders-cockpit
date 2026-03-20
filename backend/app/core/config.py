@@ -135,9 +135,9 @@ class Settings:
             massive_api_base_url=os.getenv(
                 "MASSIVE_API_BASE_URL", os.getenv("POLYGON_API_BASE_URL", "https://api.polygon.io")
             ).strip(),
-            default_account_equity=float(os.getenv("DEFAULT_ACCOUNT_EQUITY", "25000")),
+            default_account_equity=float(os.getenv("DEFAULT_ACCOUNT_EQUITY", "100000")),
             default_risk_pct=float(os.getenv("DEFAULT_RISK_PCT", "1")),
-            max_position_notional_pct=float(os.getenv("MAX_POSITION_NOTIONAL_PCT", "20")),
+            max_position_notional_pct=float(os.getenv("MAX_POSITION_NOTIONAL_PCT", "100")),
             daily_loss_limit_pct=float(os.getenv("DAILY_LOSS_LIMIT_PCT", "2")),
             max_open_positions=max(1, int(os.getenv("MAX_OPEN_POSITIONS", "6"))),
             ops_api_key=os.getenv("OPS_API_KEY", "").strip(),

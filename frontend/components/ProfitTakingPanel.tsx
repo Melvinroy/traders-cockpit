@@ -19,8 +19,8 @@ export function ProfitTakingPanel(props: Props) {
   const plannedShares = setup ? splitShares(setup.shares, trancheCount) : [];
   const activeQty = activePosition ? activeShares(activePosition) : 0;
   const soldQty = activePosition ? soldShares(activePosition) : 0;
-  const showExitPlan = Boolean(setup && activePosition);
-  const plannedSetup = showExitPlan ? setup : null;
+  const plannedSetup = setup;
+  const canExecuteProfit = activePosition ? ["protected", "P1_done", "P2_done", "runner_only"].includes(activePosition.phase) : false;
 
   return (
     <div className="panel manage-panel">
@@ -31,7 +31,7 @@ export function ProfitTakingPanel(props: Props) {
           <button type="button" className={`tranche-count-btn ${trancheCount === 1 ? "active" : ""}`} onClick={() => onTrancheCountChange(1)}>P1</button>
           <button type="button" className={`tranche-count-btn ${trancheCount === 2 ? "active" : ""}`} onClick={() => onTrancheCountChange(2)}>P1{"\u00B7"}P2</button>
           <button type="button" className={`tranche-count-btn ${trancheCount === 3 ? "active" : ""}`} onClick={() => onTrancheCountChange(3)}>P1{"\u00B7"}P2{"\u00B7"}P3</button>
-          <button type="button" className="stop-ok-btn" disabled={!setup || !activePosition} onClick={onExecute}>EXECUTE</button>
+          <button type="button" className="stop-ok-btn" disabled={!canExecuteProfit} onClick={onExecute}>EXECUTE</button>
           <div className="position-summary-header">{activePosition ? `${activeQty}sh active / ${soldQty}sh sold` : "No position"}</div>
         </div>
       </div>
