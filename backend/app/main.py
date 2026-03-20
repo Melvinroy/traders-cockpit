@@ -16,17 +16,19 @@ from app.services.cockpit import CockpitService
 from app.ws.manager import WebSocketManager
 
 settings = Settings.from_env()
-ws_manager = WebSocketManager()
+ws_manager = WebSocketManager(settings.redis_url, settings.redis_channel_prefix)
 service = CockpitService(settings, ws_manager)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await ws_manager.start()
     if settings.uses_sqlite:
         Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         service.ensure_seed_data(db)
     yield
+    await ws_manager.stop()
 
 
 app = FastAPI(title="traders-cockpit", lifespan=lifespan)

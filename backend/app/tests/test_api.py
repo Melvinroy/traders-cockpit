@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 db_path = Path(__file__).resolve().parent / "test.db"
 if db_path.exists():
     db_path.unlink()
@@ -13,11 +15,22 @@ os.environ["AUTH_REQUIRE_LOGIN"] = "false"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.db.base import Base  # noqa: E402
-from app.db.session import engine  # noqa: E402
+from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models.entities import OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_db() -> None:
+    with SessionLocal() as db:
+        db.query(OrderEntity).delete()
+        db.query(PositionEntity).delete()
+        db.query(TradeLogEntity).delete()
+        db.commit()
+    yield
 
 
 def tranche_modes() -> list[dict]:
@@ -33,6 +46,8 @@ def test_setup_endpoint_returns_contract() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["symbol"] == "AAPL"
+    assert data["provider"] in {"mock", "alpaca_quote"}
+    assert data["entryBasis"] == "bid_ask_midpoint"
     assert data["entry"] > data["finalStop"]
     assert data["shares"] > 0
 
@@ -78,6 +93,10 @@ def test_trade_lifecycle() -> None:
     profit_state = profit.json()
     assert profit_state["phase"] in {"P2_done", "runner_only", "closed"}
     assert len(profit_state["orders"]) >= 4
+    assert all(
+        order["id"] == profit_state["rootOrderId"] or order.get("parentId") == profit_state["rootOrderId"]
+        for order in profit_state["orders"]
+    )
 
 
 def test_account_update() -> None:
@@ -86,3 +105,63 @@ def test_account_update() -> None:
     data = update.json()
     assert data["equity"] == 30000
     assert data["risk_pct"] == 1.5
+    assert data["effective_mode"] == "paper"
+    assert data["max_open_positions"] >= 1
+
+
+def test_live_mode_is_gated_by_default() -> None:
+    update = client.put("/api/account/settings", json={"equity": 30000, "risk_pct": 1.5, "mode": "alpaca_live"})
+    assert update.status_code == 400
+    assert "Live trading is disabled" in update.text
+
+
+def test_activity_log_can_be_cleared() -> None:
+    before = client.get("/api/activity-log")
+    assert before.status_code == 200
+    assert len(before.json()) >= 1
+
+    cleared = client.delete("/api/activity-log")
+    assert cleared.status_code == 200
+    assert cleared.json()["cleared"] >= 1
+
+    after = client.get("/api/activity-log")
+    assert after.status_code == 200
+    messages = [entry["message"] for entry in after.json()]
+    assert "Log cleared." in messages
+
+
+def test_runner_cannot_be_reexecuted_once_active() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+        },
+    )
+    assert enter.status_code == 200
+    client.post(
+        "/api/trade/stops",
+        json={
+            "symbol": "AAPL",
+            "stopMode": 3,
+            "stopModes": [
+                {"mode": "stop", "pct": 33.0},
+                {"mode": "stop", "pct": 66.0},
+                {"mode": "stop", "pct": 100.0},
+            ],
+        },
+    )
+    first_profit = client.post("/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()})
+    assert first_profit.status_code == 200
+    second_profit = client.post("/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()})
+    assert second_profit.status_code == 400
+    assert "Active TRAIL order already exists" in second_profit.text

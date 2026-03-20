@@ -1,3 +1,4 @@
+import { fp } from "@/lib/cockpit-ui";
 import type { SetupResponse } from "@/lib/types";
 
 type Props = {
@@ -5,6 +6,8 @@ type Props = {
   entryPrice: number;
   stopRef: "lod" | "atr" | "manual";
   manualStop: number;
+  previewFlashing?: boolean;
+  enterFlashing?: boolean;
   onEntryChange: (value: number) => void;
   onStopRefChange: (value: "lod" | "atr" | "manual") => void;
   onManualStopChange: (value: number) => void;
@@ -13,40 +16,69 @@ type Props = {
 };
 
 export function EntryPanel(props: Props) {
-  const { setup, entryPrice, stopRef, manualStop, onEntryChange, onStopRefChange, onManualStopChange, onPreview, onEnterTrade } = props;
+  const {
+    setup,
+    entryPrice,
+    stopRef,
+    manualStop,
+    previewFlashing = false,
+    enterFlashing = false,
+    onEntryChange,
+    onStopRefChange,
+    onManualStopChange,
+    onPreview,
+    onEnterTrade
+  } = props;
+  const stopPrice = stopRef === "manual" ? manualStop : setup?.finalStop ?? 0;
+
   return (
     <div className="panel entry-panel">
-      <div className="panel-header">
-        <div className="panel-title">Trade Entry</div>
-      </div>
-      <div className="panel-body">
+      <div className="panel-header"><div className="panel-title">Trade Entry</div></div>
+      <div className="panel-body entry-body">
         {!setup ? (
-          <div className="empty-inline">Load a setup to enable entry actions.</div>
+          <div className="entry-empty">Load a setup to enable entry actions.</div>
         ) : (
-          <div className="entry-grid">
-            <label className="field">
-              <span>Entry Price</span>
-              <input type="number" value={Number.isFinite(entryPrice) ? entryPrice : setup.entry} onChange={(event) => onEntryChange(Number(event.target.value))} />
-            </label>
-            <label className="field">
-              <span>Shares to Buy</span>
-              <input type="text" readOnly value={setup.shares} />
-            </label>
-            <div className="field">
-              <span>Stop Reference</span>
-              <div className="segmented">
-                <button className={`tranche-count-btn ${stopRef === "lod" ? "active" : ""}`} onClick={() => onStopRefChange("lod")}>LoD</button>
-                <button className={`tranche-count-btn ${stopRef === "atr" ? "active" : ""}`} onClick={() => onStopRefChange("atr")}>ATR</button>
-                <button className={`tranche-count-btn ${stopRef === "manual" ? "active" : ""}`} onClick={() => onStopRefChange("manual")}>Manual</button>
+          <div className="entry-stack">
+            <div className="entry-row entry-row-labels">
+              <div className="entry-caption">Entry Price</div>
+              <div className="entry-caption">Shares to Buy</div>
+              <div className="entry-spacer" />
+              <div className="entry-caption">Stop Reference</div>
+            </div>
+            <div className="entry-row entry-row-main">
+              <input
+                id="heroEntry"
+                type="number"
+                inputMode="decimal"
+                value={entryPrice}
+                className="hero-entry"
+                onChange={(event) => onEntryChange(Number(event.target.value))}
+              />
+              <div className="hero-shares">{setup.shares}</div>
+              <div className="entry-v-divider" />
+              <div className="stop-ref-wrap">
+                <div className="entry-toggle-group">
+                  <button type="button" className={`tranche-count-btn ${stopRef === "lod" ? "active" : ""}`} onClick={() => onStopRefChange("lod")}>LoD</button>
+                  <button type="button" className={`tranche-count-btn ${stopRef === "atr" ? "active" : ""}`} onClick={() => onStopRefChange("atr")}>ATR</button>
+                  <button type="button" className={`tranche-count-btn ${stopRef === "manual" ? "active" : ""}`} onClick={() => onStopRefChange("manual")}>Manual</button>
+                </div>
+                <div className="manual-stop-wrap">
+                  <span className="manual-stop-prefix">$</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={manualStop}
+                    className="manual-stop-input"
+                    onChange={(event) => onManualStopChange(Number(event.target.value))}
+                    disabled={stopRef !== "manual"}
+                  />
+                </div>
+                <span className="hero-stop-price">{fp(stopPrice)}</span>
               </div>
             </div>
-            <label className="field">
-              <span>Manual Stop</span>
-              <input type="number" value={manualStop} onChange={(event) => onManualStopChange(Number(event.target.value))} disabled={stopRef !== "manual"} />
-            </label>
-            <div className="entry-actions">
-              <button className="btn btn-ghost" onClick={onPreview}>PREVIEW</button>
-              <button className="btn btn-cyan" onClick={onEnterTrade}>ENTER TRADE</button>
+            <div className="entry-actions-row">
+              <button type="button" className={`btn btn-ghost ${previewFlashing ? "flash" : ""}`} onClick={onPreview}>PREVIEW</button>
+              <button type="button" className={`btn btn-cyan ${enterFlashing ? "flash" : ""}`} onClick={onEnterTrade}>{"\u2197"} ENTER TRADE</button>
             </div>
           </div>
         )}

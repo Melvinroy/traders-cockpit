@@ -7,6 +7,15 @@ function Get-PortListener {
   return Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
 }
 
+function Stop-PortListenerProcess {
+  param([Parameter(Mandatory = $true)][int]$Port)
+
+  $listener = Get-PortListener -Port $Port
+  if ($null -ne $listener) {
+    Stop-Process -Id $listener.OwningProcess -Force
+  }
+}
+
 function Assert-PortFree {
   param(
     [Parameter(Mandatory = $true)][int]$Port,
@@ -55,6 +64,23 @@ function Wait-ForPort {
   }
 
   throw "Timed out waiting for port $Port"
+}
+
+function Wait-ForPortClosed {
+  param(
+    [Parameter(Mandatory = $true)][int]$Port,
+    [int]$TimeoutSeconds = 30
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    if ($null -eq (Get-PortListener -Port $Port)) {
+      return
+    }
+    Start-Sleep -Milliseconds 500
+  }
+
+  throw "Timed out waiting for port $Port to close"
 }
 
 function Wait-ForCommandSuccess {

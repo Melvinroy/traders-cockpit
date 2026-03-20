@@ -27,6 +27,7 @@ export const api = {
   getPositions: () => request<PositionView[]>("/api/positions"),
   getOrders: (symbol: string) => request(`/api/orders/${symbol}`),
   getLogs: () => request<LogEntry[]>("/api/activity-log"),
+  clearLogs: () => request<{ cleared: number }>("/api/activity-log", { method: "DELETE" }),
   previewTrade: (payload: { symbol: string; entry: number; stopRef: string; stopPrice: number; riskPct: number }) =>
     request("/api/trade/preview", { method: "POST", body: JSON.stringify(payload) }),
   enterTrade: (payload: { symbol: string; entry: number; stopRef: string; stopPrice: number; trancheCount: number; trancheModes: TrancheMode[] }) =>

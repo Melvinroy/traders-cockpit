@@ -43,6 +43,9 @@ class OrderView(BaseModel):
     coveredTranches: list[str] = Field(default_factory=list)
     parentId: str | None = None
     brokerOrderId: str | None = None
+    createdAt: datetime | None = None
+    filledAt: datetime | None = None
+    fillPrice: float | None = None
 
 
 class PositionView(BaseModel):
@@ -69,6 +72,10 @@ class LogEntry(BaseModel):
 
 class SetupResponse(BaseModel):
     symbol: str
+    provider: str = "mock"
+    quoteTimestamp: datetime | None = None
+    entryBasis: str = "midpoint"
+    stopReferenceDefault: str = "lod"
     bid: float
     ask: float
     last: float
@@ -133,7 +140,13 @@ class AccountSettingsView(BaseModel):
     buying_power: float
     risk_pct: float
     mode: str
+    effective_mode: str
     daily_realized_pnl: float
+    allow_live_trading: bool
+    max_position_notional_pct: float
+    daily_loss_limit_pct: float
+    max_open_positions: int
+    live_disabled_reason: str | None = None
 
 
 class AccountSettingsUpdate(BaseModel):

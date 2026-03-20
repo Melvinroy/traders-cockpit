@@ -23,6 +23,7 @@
 - [`UI.html`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/UI.html) is the visual and interaction contract
 - [`Traders Cockpit.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/Traders%20Cockpit.md) is the backend and architecture contract
 - `TradeCtrl` is the process and repo-hygiene reference
+- [`docs/architecture/OVERVIEW.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/architecture/OVERVIEW.md) documents the current runtime architecture
 
 ## Development Workflow
 
@@ -130,12 +131,30 @@ Important defaults:
 - PostgreSQL on `55432` and Redis on `56379` are the default local persistence endpoints
 - SQLite is fallback-only and should be enabled explicitly when needed
 
+Additional realtime/safety envs:
+
+- `REDIS_CHANNEL_PREFIX` scopes websocket pub/sub fanout across environments
+- `ALLOW_LIVE_TRADING=false` keeps live execution disabled even if `BROKER_MODE=alpaca_live`
+- `LIVE_CONFIRMATION_TOKEN` must be present before live execution can become effective
+
 ## Architecture Notes
 
 - The frontend preserves the prototype layout and state shape as closely as possible.
 - The backend computes sizing, stop ladders, tranche splits, and state transitions server-side.
 - Orders use parent-child hierarchy rooted on the entry order.
+- Realtime fanout uses Redis when available and falls back to single-process websocket broadcast in local-only scenarios.
 - Live trading is scaffolded but disabled by default.
+
+## Realtime Contract
+
+`WS /ws/cockpit` publishes normalized envelopes:
+
+- `price_update`
+- `position_update`
+- `order_update`
+- `log_update`
+
+The frontend still tolerates legacy local event names during the transition, but these normalized event names are now the intended contract.
 
 ## Testing
 
@@ -151,7 +170,28 @@ npm run test
 npm run build
 ```
 
-Browser smoke evidence is written to `output/playwright/browser-smoke.png` when using `.\scripts\dev\run-qc.ps1`.
+Browser smoke and fidelity evidence are written under `frontend/output/playwright/` when using `.\scripts\dev\run-qc.ps1`.
+
+Required state artifacts:
+
+- `baseline-idle.png`
+- `baseline-setup-loaded.png`
+- `baseline-trade-entered.png`
+- `baseline-protected.png`
+- `baseline-profit-flow.png`
+
+## Contribution
+
+1. Create or link an issue.
+2. Branch from `codex/integration-app`.
+3. Open a PR back into `codex/integration-app`.
+4. Run the repo QC path before asking for review.
+5. Promote only through a separate PR from `codex/integration-app` into `main`.
+
+For release preparation, use:
+
+- [`docs/process/STAGING_RELEASE_PLAYBOOK.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/STAGING_RELEASE_PLAYBOOK.md)
+- [`docs/handoffs/2026-03-21-integration-readiness.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/handoffs/2026-03-21-integration-readiness.md)
 
 ## OSS
 
@@ -163,6 +203,6 @@ Browser smoke evidence is written to `output/playwright/browser-smoke.png` when 
 
 - Real Alpaca paper execution with broker reconciliation
 - Polygon-backed technicals and short-interest enrichment
-- Realtime Redis event fanout beyond single-process dev mode
+- Multi-instance Redis event fanout hardening in deployment environments
 - Position snapshotting and richer audit trails
 - Expanded smoke and browser QC coverage
