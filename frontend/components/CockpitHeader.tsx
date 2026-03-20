@@ -43,7 +43,7 @@ export function CockpitHeader(props: Props) {
           RESET
         </button>
       </div>
-      <div className="badge badge-paper">{account?.mode?.includes("live") ? "LIVE" : "\u25CF PAPER"}</div>
+      <div className="badge badge-paper">{account?.effective_mode?.includes("live") ? "LIVE" : "\u25CF PAPER"}</div>
       <div className={`state-display state-${phase}`}>{phase.replaceAll("_", " ").toUpperCase()}</div>
       <div className="live-price" style={{ display: livePrice === null ? "none" : "block" }}>
         <span>{ticker}</span>

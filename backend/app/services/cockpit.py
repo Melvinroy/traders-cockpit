@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from math import floor
 from random import uniform
 
-from sqlalchemy import func, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.broker import AlpacaBrokerAdapter, PaperBrokerAdapter
@@ -67,16 +67,25 @@ class CockpitService:
         self.ensure_seed_data(db)
         account = db.scalar(select(AccountSettingsEntity))
         assert account is not None
+        effective_mode = self._effective_account_mode(account.mode)
         return AccountSettingsView(
             equity=account.equity,
             buying_power=account.buying_power,
             risk_pct=account.risk_pct,
             mode=account.mode,
+            effective_mode=effective_mode,
             daily_realized_pnl=account.daily_realized_pnl,
+            allow_live_trading=self.settings.allow_live_trading,
+            max_position_notional_pct=self.settings.max_position_notional_pct,
+            daily_loss_limit_pct=self.settings.daily_loss_limit_pct,
+            max_open_positions=self.settings.max_open_positions,
+            live_disabled_reason=self._live_disabled_reason(account.mode),
         )
 
     def update_account(self, db: Session, payload: AccountSettingsUpdate) -> AccountSettingsView:
         self.ensure_seed_data(db)
+        if payload.mode == "alpaca_live" and self._live_disabled_reason(payload.mode):
+            raise ValueError(self._live_disabled_reason(payload.mode) or "Live trading is disabled")
         account = db.scalar(select(AccountSettingsEntity))
         assert account is not None
         account.equity = payload.equity
@@ -96,6 +105,7 @@ class CockpitService:
 
     def preview_trade(self, db: Session, payload: TradePreviewRequest) -> dict:
         setup = self.get_setup(db, payload.symbol)
+        self._validate_stop(payload.entry, payload.stopPrice)
         per_share_risk = round(payload.entry - payload.stopPrice, 2)
         shares = self._calculate_shares(setup.accountEquity, payload.riskPct, per_share_risk)
         self._log(
@@ -117,6 +127,8 @@ class CockpitService:
     async def enter_trade(self, db: Session, payload: TradeEnterRequest) -> PositionView:
         symbol = payload.symbol.upper()
         setup = self.get_setup(db, symbol)
+        self._validate_stop(payload.entry, payload.stopPrice)
+        self._validate_tranche_modes(payload.trancheCount, payload.trancheModes)
         self._enforce_risk_checks(db, symbol, payload.entry, setup.shares)
         qtys = self._split_shares(setup.shares, payload.trancheCount)
         tranches = [
@@ -147,7 +159,7 @@ class CockpitService:
                 tranche_modes=[item.model_dump() for item in payload.trancheModes],
                 stop_modes=[StopMode().model_dump() for _ in range(3)],
                 tranches=tranches,
-                setup_snapshot=setup.model_dump(),
+                setup_snapshot=setup.model_dump(mode="json"),
                 root_order_id=root_order_id,
                 created_at=utcnow(),
                 updated_at=utcnow(),
@@ -164,7 +176,7 @@ class CockpitService:
             position.tranche_modes = [item.model_dump() for item in payload.trancheModes]
             position.stop_modes = [StopMode().model_dump() for _ in range(3)]
             position.tranches = tranches
-            position.setup_snapshot = setup.model_dump()
+            position.setup_snapshot = setup.model_dump(mode="json")
             position.root_order_id = root_order_id
             position.updated_at = utcnow()
             position.closed_at = None
@@ -189,11 +201,13 @@ class CockpitService:
         self._log(db, symbol, "exec", f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f}")
         db.commit()
         view = self.get_position(db, symbol)
-        await self.ws_manager.broadcast("cockpit", {"type": "position_update", "symbol": symbol, "phase": view.phase, "pnl": 0.0})
+        await self._broadcast_position_bundle(db, view, pnl=0.0)
         return view
 
     async def apply_stops(self, db: Session, payload: StopsRequest) -> PositionView:
         position = self._require_position(db, payload.symbol)
+        self._ensure_position_is_open(position)
+        self._validate_stop_mode(payload.stopMode, payload.stopModes)
         self._reject_duplicate_active_stops(db, position.symbol)
         stop_range = round(position.entry_price - position.stop_price, 2)
         current_tranches = deepcopy(position.tranches)
@@ -235,19 +249,23 @@ class CockpitService:
         self._log(db, position.symbol, "warn", f"Stops applied in S{payload.stopMode} mode")
         db.commit()
         view = self.get_position(db, position.symbol)
-        await self.ws_manager.broadcast("cockpit", {"type": "position_update", "symbol": position.symbol, "phase": view.phase, "pnl": self._pnl(view)})
+        await self._broadcast_position_bundle(db, view)
         return view
 
     async def execute_profit_plan(self, db: Session, payload: ProfitRequest) -> PositionView:
         position = self._require_position(db, payload.symbol)
+        self._ensure_profit_actionable(position)
+        self._validate_tranche_modes(position.tranche_count, payload.trancheModes)
         tranches = deepcopy(position.tranches)
         per_share_risk = round(position.entry_price - position.stop_price, 2)
         phase = position.phase
+        executed_count = 0
         for index, tranche in enumerate(tranches):
             if tranche["status"] != "active":
                 continue
             mode = payload.trancheModes[index]
             if mode.mode == "runner":
+                self._reject_duplicate_active_order(db, position.symbol, tranche["id"], "TRAIL")
                 runner_stop = self._trail_stop(position.live_price, mode.trail, mode.trailUnit)
                 tranche["mode"] = "runner"
                 tranche["runnerStop"] = runner_stop
@@ -270,6 +288,7 @@ class CockpitService:
                 )
                 phase = "runner_only"
             else:
+                self._reject_duplicate_active_order(db, position.symbol, tranche["id"], "LMT")
                 target = self._resolve_target_price(position.entry_price, per_share_risk, mode)
                 broker = self.broker.place_limit_order(position.symbol, tranche["qty"], target)
                 db.add(
@@ -294,6 +313,7 @@ class CockpitService:
                 tranche["target"] = target
                 self._reduce_stop_orders(db, position.symbol, tranche["id"], tranche["qty"])
                 phase = "P1_done" if index == 0 else "P2_done"
+                executed_count += 1
         if all(tranche["status"] != "active" for tranche in tranches):
             phase = "closed"
             position.closed_at = utcnow()
@@ -301,15 +321,17 @@ class CockpitService:
         position.tranche_modes = [item.model_dump() for item in payload.trancheModes]
         position.phase = phase
         position.updated_at = utcnow()
-        executed = len([tranche for tranche in tranches if tranche["status"] == "sold"])
-        self._log(db, position.symbol, "exec", f"\u2713 Profit plan executed \u2014 {executed} tranche(s) filled")
+        if executed_count == 0 and phase == "runner_only":
+            raise ValueError("No executable profit tranches remain; runner already active")
+        self._log(db, position.symbol, "exec", f"\u2713 Profit plan executed \u2014 {executed_count} tranche(s) filled")
         db.commit()
         view = self.get_position(db, position.symbol)
-        await self.ws_manager.broadcast("cockpit", {"type": "position_update", "symbol": position.symbol, "phase": view.phase, "pnl": self._pnl(view)})
+        await self._broadcast_position_bundle(db, view)
         return view
 
     async def move_to_be(self, db: Session, symbol: str) -> PositionView:
         position = self._require_position(db, symbol)
+        self._ensure_position_is_open(position)
         position.tranches = [
             {**tranche, "stop": position.entry_price} if tranche["status"] == "active" else tranche
             for tranche in deepcopy(position.tranches)
@@ -322,13 +344,16 @@ class CockpitService:
         position.updated_at = utcnow()
         self._log(db, position.symbol, "warn", f"All stops \u2192 breakeven: {position.entry_price:.2f}")
         db.commit()
-        return self.get_position(db, position.symbol)
+        view = self.get_position(db, position.symbol)
+        await self._broadcast_position_bundle(db, view)
+        return view
 
     async def flatten(self, db: Session, symbol: str) -> PositionView:
         position = self._require_position(db, symbol)
+        self._ensure_position_is_open(position)
         updated_tranches = []
         for order in db.scalars(select(OrderEntity).where(OrderEntity.symbol == position.symbol)):
-            if order.type == "STOP" and order.status in {"ACTIVE", "MODIFIED"}:
+            if order.status in {"ACTIVE", "MODIFIED"}:
                 order.status = "CANCELED"
         for tranche in deepcopy(position.tranches):
             if tranche["status"] == "active":
@@ -360,7 +385,7 @@ class CockpitService:
         self._log(db, position.symbol, "close", "\u2B1B POSITION FLATTENED \u2014 all tranches closed @ market")
         db.commit()
         view = self.get_position(db, position.symbol)
-        await self.ws_manager.broadcast("cockpit", {"type": "position_update", "symbol": position.symbol, "phase": view.phase, "pnl": self._pnl(view)})
+        await self._broadcast_position_bundle(db, view)
         return view
 
     def get_positions(self, db: Session) -> list[PositionView]:
@@ -412,15 +437,15 @@ class CockpitService:
         base = position.entry_price
         await self.ws_manager.broadcast(
             "cockpit",
-            {
-                "type": "price",
-                "symbol": position.symbol,
-                "bid": round(position.live_price - 0.03, 2),
-                "ask": round(position.live_price + 0.03, 2),
-                "last": position.live_price,
-                "delta": round(position.live_price - base, 2),
-                "delta_pct": round(((position.live_price - base) / base) * 100, 2) if base else 0.0,
-            },
+            self._event(
+                "price_update",
+                symbol=position.symbol,
+                bid=round(position.live_price - 0.03, 2),
+                ask=round(position.live_price + 0.03, 2),
+                last=position.live_price,
+                delta=round(position.live_price - base, 2),
+                delta_pct=round(((position.live_price - base) / base) * 100, 2) if base else 0.0,
+            ),
         )
 
     def _build_setup_response(self, market: SetupMarketData, equity: float, risk_pct: float) -> SetupResponse:
@@ -430,6 +455,10 @@ class CockpitService:
         shares = self._calculate_shares(equity, risk_pct, per_share_risk)
         return SetupResponse(
             symbol=market.symbol,
+            provider=market.provider,
+            quoteTimestamp=market.quote_timestamp,
+            entryBasis="bid_ask_midpoint",
+            stopReferenceDefault="lod",
             bid=market.bid,
             ask=market.ask,
             last=market.last,
@@ -517,16 +546,110 @@ class CockpitService:
         if stop_price <= entry * 0.5:
             raise ValueError("Stop price too far below entry")
 
+    def _validate_stop_mode(self, stop_mode: int, stop_modes: list[StopMode]) -> None:
+        if stop_mode not in {1, 2, 3}:
+            raise ValueError("Stop mode must be 1, 2, or 3")
+        if len(stop_modes) < stop_mode:
+            raise ValueError("Stop mode configuration is incomplete")
+
+    def _validate_tranche_modes(self, tranche_count: int, tranche_modes: list[TrancheMode]) -> None:
+        if tranche_count not in {1, 2, 3}:
+            raise ValueError("Tranche count must be 1, 2, or 3")
+        if len(tranche_modes) < tranche_count:
+            raise ValueError("Profit tranche configuration is incomplete")
+
     def _reject_duplicate_active_stops(self, db: Session, symbol: str) -> None:
         active = db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.type == "STOP", OrderEntity.status.in_(["ACTIVE", "MODIFIED"]))).all()
         if active:
             raise ValueError("Active stop orders already exist for this symbol")
+
+    def _reject_duplicate_active_order(self, db: Session, symbol: str, tranche_id: str, order_type: str) -> None:
+        active = db.scalars(
+            select(OrderEntity).where(
+                OrderEntity.symbol == symbol,
+                OrderEntity.type == order_type,
+                OrderEntity.status.in_(["ACTIVE", "MODIFIED"]),
+            )
+        ).all()
+        if any(tranche_id in (order.covered_tranches or []) or order.tranche_label == tranche_id for order in active):
+            raise ValueError(f"Active {order_type} order already exists for {tranche_id}")
 
     def _require_position(self, db: Session, symbol: str) -> PositionEntity:
         position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol.upper()))
         if position is None:
             raise ValueError(f"No position for {symbol.upper()}")
         return position
+
+    def _ensure_position_is_open(self, position: PositionEntity) -> None:
+        if position.phase == "closed":
+            raise ValueError(f"Position {position.symbol} is already closed")
+        if not any(tranche["status"] == "active" for tranche in position.tranches):
+            raise ValueError(f"No active tranches remain for {position.symbol}")
+
+    def _ensure_profit_actionable(self, position: PositionEntity) -> None:
+        self._ensure_position_is_open(position)
+        if position.phase not in {"protected", "P1_done", "P2_done", "runner_only"}:
+            raise ValueError("Profit execution requires a protected or active profit-managed position")
+
+    def _effective_account_mode(self, requested_mode: str) -> str:
+        if requested_mode == "alpaca_live" and self._live_disabled_reason(requested_mode):
+            return "paper"
+        return requested_mode
+
+    def _live_disabled_reason(self, requested_mode: str) -> str | None:
+        if requested_mode != "alpaca_live":
+            return None
+        if not self.settings.allow_live_trading:
+            return "Live trading is disabled by config"
+        if not self.settings.live_confirmation_token:
+            return "Live confirmation token is not configured"
+        return None
+
+    async def _broadcast_position_bundle(
+        self, db: Session, view: PositionView, pnl: float | None = None
+    ) -> None:
+        latest_log = self._latest_log_entry(db, view.symbol)
+        await self.ws_manager.broadcast(
+            "cockpit",
+            self._event(
+                "position_update",
+                symbol=view.symbol,
+                phase=view.phase,
+                pnl=self._pnl(view) if pnl is None else pnl,
+                position=view.model_dump(mode="json"),
+            ),
+        )
+        await self.ws_manager.broadcast(
+            "cockpit",
+            self._event(
+                "order_update",
+                symbol=view.symbol,
+                rootOrderId=view.rootOrderId,
+                orders=[order.model_dump(mode="json") for order in view.orders],
+            ),
+        )
+        if latest_log is not None:
+            await self.ws_manager.broadcast(
+                "cockpit",
+                self._event("log_update", symbol=view.symbol, log=latest_log.model_dump(mode="json")),
+            )
+
+    def _latest_log_entry(self, db: Session, symbol: str | None = None) -> LogEntry | None:
+        stmt = select(TradeLogEntity)
+        if symbol is not None:
+            stmt = stmt.where((TradeLogEntity.symbol == symbol) | (TradeLogEntity.symbol.is_(None)))
+        row = db.scalar(stmt.order_by(desc(TradeLogEntity.created_at)))
+        if row is None:
+            return None
+        return LogEntry.model_validate(row, from_attributes=True)
+
+    def _event(self, event_type: str, **payload: object) -> dict[str, object]:
+        return {
+            "type": event_type,
+            "version": "2026-03-21",
+            "timestamp": utcnow().isoformat(),
+            **payload,
+        }
 
     def _next_order_id(self, db: Session) -> str:
         persisted_max = db.scalar(select(func.max(OrderEntity.id))) or 0
@@ -552,6 +675,9 @@ class CockpitService:
             coveredTranches=list(row.covered_tranches or []),
             parentId=row.parent_id,
             brokerOrderId=row.broker_order_id,
+            createdAt=row.created_at,
+            filledAt=row.filled_at,
+            fillPrice=row.fill_price,
         )
 
     def _position_view(self, db: Session, row: PositionEntity) -> PositionView:

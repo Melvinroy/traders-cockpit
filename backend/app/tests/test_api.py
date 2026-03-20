@@ -46,6 +46,8 @@ def test_setup_endpoint_returns_contract() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["symbol"] == "AAPL"
+    assert data["provider"] in {"mock", "alpaca_quote"}
+    assert data["entryBasis"] == "bid_ask_midpoint"
     assert data["entry"] > data["finalStop"]
     assert data["shares"] > 0
 
@@ -103,6 +105,14 @@ def test_account_update() -> None:
     data = update.json()
     assert data["equity"] == 30000
     assert data["risk_pct"] == 1.5
+    assert data["effective_mode"] == "paper"
+    assert data["max_open_positions"] >= 1
+
+
+def test_live_mode_is_gated_by_default() -> None:
+    update = client.put("/api/account/settings", json={"equity": 30000, "risk_pct": 1.5, "mode": "alpaca_live"})
+    assert update.status_code == 400
+    assert "Live trading is disabled" in update.text
 
 
 def test_activity_log_can_be_cleared() -> None:
@@ -118,3 +128,40 @@ def test_activity_log_can_be_cleared() -> None:
     assert after.status_code == 200
     messages = [entry["message"] for entry in after.json()]
     assert "Log cleared." in messages
+
+
+def test_runner_cannot_be_reexecuted_once_active() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+        },
+    )
+    assert enter.status_code == 200
+    client.post(
+        "/api/trade/stops",
+        json={
+            "symbol": "AAPL",
+            "stopMode": 3,
+            "stopModes": [
+                {"mode": "stop", "pct": 33.0},
+                {"mode": "stop", "pct": 66.0},
+                {"mode": "stop", "pct": 100.0},
+            ],
+        },
+    )
+    first_profit = client.post("/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()})
+    assert first_profit.status_code == 200
+    second_profit = client.post("/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()})
+    assert second_profit.status_code == 400
+    assert "Active TRAIL order already exists" in second_profit.text

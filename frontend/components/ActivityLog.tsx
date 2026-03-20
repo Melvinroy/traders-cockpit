@@ -15,6 +15,7 @@ export function ActivityLog({ logs, onClear, clearFlashing = false }: { logs: Lo
               <div className="log-time">{formatLogTime(entry.created_at)}</div>
               <div className="log-msg">
                 <span className={`tag tag-${entry.tag}`}>{entry.tag.toUpperCase()}</span>
+                {entry.symbol ? <span className="log-symbol-chip">{entry.symbol}</span> : null}
                 {entry.message}
               </div>
             </div>

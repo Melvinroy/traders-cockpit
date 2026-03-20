@@ -138,7 +138,7 @@ export function Cockpit() {
     };
     ws.onmessage = (event) => {
       const payload = JSON.parse(event.data) as Record<string, unknown>;
-      if (payload.type === "price" && typeof payload.symbol === "string") {
+      if ((payload.type === "price" || payload.type === "price_update") && typeof payload.symbol === "string") {
         setPositions((current) =>
           current.map((position) =>
             position.symbol === payload.symbol
@@ -147,7 +147,7 @@ export function Cockpit() {
           )
         );
       }
-      if (payload.type === "position_update") {
+      if (payload.type === "position_update" || payload.type === "order_update" || payload.type === "log_update") {
         void hydrate({ autoSelectFirst: Boolean(activeSymbolRef.current) });
       }
     };

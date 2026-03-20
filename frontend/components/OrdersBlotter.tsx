@@ -1,5 +1,5 @@
 import type { OrderView } from "@/lib/types";
-import { fp } from "@/lib/cockpit-ui";
+import { formatLogTime, fp } from "@/lib/cockpit-ui";
 
 function typeColorClass(type: string): string {
   if (type === "STOP") return "order-type-stop";
@@ -35,11 +35,22 @@ export function OrdersBlotter({ orders }: { orders: OrderView[] }) {
             const children = childrenOf(root.id);
             const rootRow = (
               <tr key={root.id} className={children.length ? "order-root-row order-root-open" : "order-root-row"} title={root.brokerOrderId ?? undefined}>
-                <td className="order-id-root">{root.id}</td>
+                <td className="order-id-root">
+                  <div>{root.id}</div>
+                  {root.brokerOrderId ? <div className="order-subtext">{root.brokerOrderId}</div> : null}
+                </td>
                 <td className={typeColorClass(root.type)}>{root.type}</td>
                 <td>{root.qty}</td>
-                <td>{fp(root.price)}</td>
-                <td className={`order-status-${root.status}`}>{root.status}</td>
+                <td>
+                  <div>{fp(root.price)}</div>
+                  {root.fillPrice !== null && root.fillPrice !== undefined && root.fillPrice !== root.price ? (
+                    <div className="order-subtext">fill {fp(root.fillPrice)}</div>
+                  ) : null}
+                </td>
+                <td className={`order-status-${root.status}`}>
+                  <div>{root.status}</div>
+                  {root.filledAt ? <div className="order-subtext">{formatLogTime(root.filledAt)}</div> : root.createdAt ? <div className="order-subtext">{formatLogTime(root.createdAt)}</div> : null}
+                </td>
                 <td>{root.tranche}</td>
               </tr>
             );
@@ -57,8 +68,16 @@ export function OrdersBlotter({ orders }: { orders: OrderView[] }) {
                     {child.qty}
                     {child.qty < child.origQty ? <span className="order-orig-qty">({child.origQty})</span> : null}
                   </td>
-                  <td>{fp(child.price)}</td>
-                  <td className={`order-status-${child.status}`}>{child.status}</td>
+                  <td>
+                    <div>{fp(child.price)}</div>
+                    {child.fillPrice !== null && child.fillPrice !== undefined && child.fillPrice !== child.price ? (
+                      <div className="order-subtext">fill {fp(child.fillPrice)}</div>
+                    ) : null}
+                  </td>
+                  <td className={`order-status-${child.status}`}>
+                    <div>{child.status}</div>
+                    {child.filledAt ? <div className="order-subtext">{formatLogTime(child.filledAt)}</div> : child.createdAt ? <div className="order-subtext">{formatLogTime(child.createdAt)}</div> : null}
+                  </td>
                   <td>{child.tranche}</td>
                 </tr>
               );

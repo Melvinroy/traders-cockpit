@@ -1124,6 +1124,14 @@ select {
   font-weight: 600;
 }
 
+.order-subtext {
+  margin-top: 2px;
+  color: var(--text3);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+}
+
 .order-id-child {
   padding-left: 6px;
   white-space: nowrap;
@@ -1221,6 +1229,18 @@ select {
   color: var(--text1);
   font-size: 10px;
   line-height: 1.5;
+}
+
+.log-symbol-chip {
+  display: inline-flex;
+  margin-right: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  color: var(--cyan);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
 }
 
 .tag {

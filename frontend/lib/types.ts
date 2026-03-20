@@ -32,10 +32,17 @@ export type OrderView = {
   coveredTranches: string[];
   parentId?: string | null;
   brokerOrderId?: string | null;
+  createdAt?: string | null;
+  filledAt?: string | null;
+  fillPrice?: number | null;
 };
 
 export type SetupResponse = {
   symbol: string;
+  provider: string;
+  quoteTimestamp?: string | null;
+  entryBasis: string;
+  stopReferenceDefault: string;
   bid: number;
   ask: number;
   last: number;
@@ -82,7 +89,13 @@ export type AccountView = {
   buying_power: number;
   risk_pct: number;
   mode: string;
+  effective_mode: string;
   daily_realized_pnl: number;
+  allow_live_trading: boolean;
+  max_position_notional_pct: number;
+  daily_loss_limit_pct: number;
+  max_open_positions: number;
+  live_disabled_reason?: string | null;
 };
 
 export type LogEntry = {

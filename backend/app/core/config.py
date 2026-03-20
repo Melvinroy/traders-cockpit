@@ -54,6 +54,7 @@ class Settings:
     auth_trader_password: str
     database_url: str
     redis_url: str
+    redis_channel_prefix: str
     cors_origins: list[str]
     broker_mode: str
     allow_live_trading: bool
@@ -108,6 +109,7 @@ class Settings:
             auth_trader_password=os.getenv("AUTH_TRADER_PASSWORD", "trader123!").strip(),
             database_url=os.getenv("DATABASE_URL", default_db).strip(),
             redis_url=os.getenv("REDIS_URL", "redis://127.0.0.1:56379/0").strip(),
+            redis_channel_prefix=os.getenv("REDIS_CHANNEL_PREFIX", "traders-cockpit").strip(),
             cors_origins=[
                 item.strip()
                 for item in os.getenv(
@@ -158,3 +160,7 @@ class Settings:
     @property
     def uses_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def live_trading_enabled(self) -> bool:
+        return self.broker_mode == "alpaca_live" and self.allow_live_trading and bool(self.live_confirmation_token)

@@ -12,6 +12,14 @@ type Props = {
 };
 
 export function SetupPanel({ symbol, setup, account, positions, onSelectPosition, onRiskPctCommit }: Props) {
+  const atrExtension = setup?.atrExtension;
+  const rvol = setup?.rvol;
+  const extFrom10Ma = setup?.extFrom10Ma;
+  const daysToCover = setup?.days_to_cover;
+  const atrExtensionText = Number.isFinite(atrExtension) ? `${atrExtension?.toFixed(2)}x` : "--";
+  const rvolText = Number.isFinite(rvol) ? `${rvol?.toFixed(1)}x` : "--";
+  const extFrom10Text = Number.isFinite(extFrom10Ma) ? `${extFrom10Ma?.toFixed(2)}%` : "--";
+  const daysToCoverText = Number.isFinite(daysToCover) ? `${daysToCover?.toFixed(1)}` : "--";
   return (
     <div className="panel setup-panel">
       <div className="panel-header">
@@ -30,6 +38,7 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
           <>
             <div className="kv-group">
               <div className="kv-group-label">Quote</div>
+              <div className="kv-row"><span className="kv-label">Provider</span><span className="kv-val">{setup.provider}</span></div>
               <div className="kv-row"><span className="kv-label">Bid</span><span className="kv-val">{fp(setup.bid)}</span></div>
               <div className="kv-row"><span className="kv-label">Ask</span><span className="kv-val">{fp(setup.ask)}</span></div>
               <div className="kv-row"><span className="kv-label">Suggested Entry</span><span className="kv-val cyan">{fp(setup.entry)}</span></div>
@@ -71,16 +80,26 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
               <div className="kv-row"><span className="kv-label">Calc. Shares</span><span className="kv-val green">{setup.shares} sh</span></div>
             </div>
             <div className="kv-group">
+              <div className="kv-group-label">Safety</div>
+              <div className="kv-row"><span className="kv-label">Effective Mode</span><span className="kv-val">{account?.effective_mode ?? "paper"}</span></div>
+              <div className="kv-row"><span className="kv-label">Max Notional</span><span className="kv-val">{(account?.max_position_notional_pct ?? 100).toFixed(0)}%</span></div>
+              <div className="kv-row"><span className="kv-label">Daily Loss Limit</span><span className="kv-val">{(account?.daily_loss_limit_pct ?? 2).toFixed(1)}%</span></div>
+              <div className="kv-row"><span className="kv-label">Max Open Positions</span><span className="kv-val">{account?.max_open_positions ?? 6}</span></div>
+              {account?.live_disabled_reason ? (
+                <div className="kv-row"><span className="kv-label">Live Gate</span><span className="kv-val red">{account.live_disabled_reason}</span></div>
+              ) : null}
+            </div>
+            <div className="kv-group">
               <div className="kv-group-label">Reference</div>
               <div className="kv-row"><span className="kv-label">10 SMA</span><span className="kv-val">{fp(setup.sma10)}</span></div>
               <div className="kv-row"><span className="kv-label">50 SMA</span><span className="kv-val">{fp(setup.sma50)}</span></div>
               <div className="kv-row"><span className="kv-label">200 MA</span><span className="kv-val">{fp(setup.sma200)}</span></div>
-              <div className="kv-row"><span className="kv-label">ATR Ext from 50MA</span><span className="kv-val">{setup.atrExtension.toFixed(2)}x</span></div>
-              <div className="kv-row"><span className="kv-label">RVOL</span><span className="kv-val">{setup.rvol.toFixed(1)}x</span></div>
-              <div className="kv-row"><span className="kv-label">Ext from 10 MA</span><span className="kv-val">{setup.extFrom10Ma.toFixed(2)}%</span></div>
+              <div className="kv-row"><span className="kv-label">ATR Ext from 50MA</span><span className="kv-val">{atrExtensionText}</span></div>
+              <div className="kv-row"><span className="kv-label">RVOL</span><span className="kv-val">{rvolText}</span></div>
+              <div className="kv-row"><span className="kv-label">Ext from 10 MA</span><span className="kv-val">{extFrom10Text}</span></div>
               <div className="kv-row">
                 <span className="kv-label">Days to Cover</span>
-                <span className="kv-val">{setup.days_to_cover.toFixed(1)} <span className="kv-val-unit">days</span></span>
+                <span className="kv-val">{daysToCoverText} <span className="kv-val-unit">days</span></span>
               </div>
             </div>
           </>
