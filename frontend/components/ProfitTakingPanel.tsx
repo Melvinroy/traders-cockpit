@@ -1,3 +1,5 @@
+"use client";
+
 import { OrdersBlotter } from "@/components/OrdersBlotter";
 import { activeShares, f2, fp, soldShares, splitShares, targetPrice, trailingStop } from "@/lib/cockpit-ui";
 import type { OrderView, PositionView, SetupResponse, Tranche, TrancheMode } from "@/lib/types";
@@ -21,6 +23,9 @@ export function ProfitTakingPanel(props: Props) {
   const soldQty = activePosition ? soldShares(activePosition) : 0;
   const plannedSetup = setup;
   const canExecuteProfit = activePosition ? ["protected", "P1_done", "P2_done", "runner_only"].includes(activePosition.phase) : false;
+  const visibleTranches = activePosition
+    ? tranches.filter((tranche) => tranche.status === "sold" || tranche.status === "canceled" || (tranche.id === "T3" && activePosition.phase === "runner_only"))
+    : [];
 
   return (
     <div className="panel manage-panel">
@@ -105,15 +110,18 @@ export function ProfitTakingPanel(props: Props) {
         </div>
       </div>
       <div className="manage-scroll">
-        <div className="section-label" style={{ display: tranches.length ? "block" : "none" }}>Exits</div>
-        {tranches.length ? (
+        <div className="section-label" style={{ display: activePosition ? "block" : "none" }}>Exits</div>
+        {activePosition ? (
           <>
             <div className="tranche-grid">
-              {tranches.map((tranche) => {
+              {visibleTranches.map((tranche) => {
                 const pnl = tranche.status === "sold" && tranche.target ? (tranche.target - (setup?.entry ?? 0)) * tranche.qty : null;
+                const trancheSuffix = tranche.label.includes("\u00B7")
+                  ? tranche.label.split("\u00B7").slice(-1)[0]?.trim() ?? tranche.label
+                  : tranche.label;
                 return (
                   <div key={tranche.id} className={`tranche-card ${tranche.status}`}>
-                    <div className="tranche-label">{tranche.id} {"\u00B7"} {tranche.label.split("·").slice(-1)[0]?.trim() ?? tranche.label}</div>
+                    <div className="tranche-label">{tranche.id} {"\u00B7"} {trancheSuffix}</div>
                     <div className="tranche-qty">{tranche.qty} <span className="tranche-unit">sh</span></div>
                     <div className="tranche-stop">{"\u2193"} STOP {fp(tranche.stop)}</div>
                     <div className="tranche-target">{tranche.target ? `${"\u2191"} TGT ${fp(tranche.target)}` : `${"\u2191"} ${tranche.mode.toUpperCase()}`}</div>

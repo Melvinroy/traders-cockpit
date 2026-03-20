@@ -1002,9 +1002,65 @@ select {
   background: var(--bg3);
 }
 
+.order-root-row.order-root-open td {
+  border-bottom: none;
+}
+
+.order-child-row td {
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid rgba(30, 42, 58, 0.4);
+}
+
+.order-child-last td {
+  border-bottom: 2px solid var(--border2);
+}
+
 .orders-empty-cell {
   color: var(--text3);
   text-align: center;
+}
+
+.order-id-root {
+  color: var(--text1);
+  font-weight: 600;
+}
+
+.order-id-child {
+  padding-left: 6px;
+  white-space: nowrap;
+}
+
+.order-tree-glyph {
+  margin-right: 3px;
+  color: var(--text3);
+  font-size: 11px;
+  letter-spacing: -1px;
+}
+
+.order-qty-reduced {
+  color: var(--amber);
+}
+
+.order-orig-qty {
+  margin-left: 4px;
+  color: var(--text3);
+  font-size: 9px;
+}
+
+.order-type-stop {
+  color: var(--red);
+}
+
+.order-type-limit {
+  color: var(--cyan);
+}
+
+.order-type-market {
+  color: var(--amber);
+}
+
+.order-type-trail {
+  color: var(--purple);
 }
 
 .order-status-ACTIVE {
