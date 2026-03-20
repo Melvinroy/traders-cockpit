@@ -6,6 +6,8 @@ type Props = {
   entryPrice: number;
   stopRef: "lod" | "atr" | "manual";
   manualStop: number;
+  previewFlashing?: boolean;
+  enterFlashing?: boolean;
   onEntryChange: (value: number) => void;
   onStopRefChange: (value: "lod" | "atr" | "manual") => void;
   onManualStopChange: (value: number) => void;
@@ -14,7 +16,19 @@ type Props = {
 };
 
 export function EntryPanel(props: Props) {
-  const { setup, entryPrice, stopRef, manualStop, onEntryChange, onStopRefChange, onManualStopChange, onPreview, onEnterTrade } = props;
+  const {
+    setup,
+    entryPrice,
+    stopRef,
+    manualStop,
+    previewFlashing = false,
+    enterFlashing = false,
+    onEntryChange,
+    onStopRefChange,
+    onManualStopChange,
+    onPreview,
+    onEnterTrade
+  } = props;
   const stopPrice = stopRef === "manual" ? manualStop : setup?.finalStop ?? 0;
 
   return (
@@ -63,8 +77,8 @@ export function EntryPanel(props: Props) {
               </div>
             </div>
             <div className="entry-actions-row">
-              <button type="button" className="btn btn-ghost" onClick={onPreview}>PREVIEW</button>
-              <button type="button" className="btn btn-cyan" onClick={onEnterTrade}>{"\u2197"} ENTER TRADE</button>
+              <button type="button" className={`btn btn-ghost ${previewFlashing ? "flash" : ""}`} onClick={onPreview}>PREVIEW</button>
+              <button type="button" className={`btn btn-cyan ${enterFlashing ? "flash" : ""}`} onClick={onEnterTrade}>{"\u2197"} ENTER TRADE</button>
             </div>
           </div>
         )}

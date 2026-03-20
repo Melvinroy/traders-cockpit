@@ -11,13 +11,25 @@ type Props = {
   trancheModes: TrancheMode[];
   tranches: Tranche[];
   orders: OrderView[];
+  executeFlashing?: boolean;
   onTrancheCountChange: (value: number) => void;
   onTrancheModeChange: (index: number, value: TrancheMode) => void;
   onExecute: () => void;
 };
 
 export function ProfitTakingPanel(props: Props) {
-  const { setup, activePosition, trancheCount, trancheModes, tranches, orders, onTrancheCountChange, onTrancheModeChange, onExecute } = props;
+  const {
+    setup,
+    activePosition,
+    trancheCount,
+    trancheModes,
+    tranches,
+    orders,
+    executeFlashing = false,
+    onTrancheCountChange,
+    onTrancheModeChange,
+    onExecute
+  } = props;
   const plannedShares = setup ? splitShares(setup.shares, trancheCount) : [];
   const activeQty = activePosition ? activeShares(activePosition) : 0;
   const soldQty = activePosition ? soldShares(activePosition) : 0;
@@ -37,7 +49,7 @@ export function ProfitTakingPanel(props: Props) {
           <button type="button" className={`tranche-count-btn ${trancheCount === 1 ? "active" : ""}`} onClick={() => onTrancheCountChange(1)}>P1</button>
           <button type="button" className={`tranche-count-btn ${trancheCount === 2 ? "active" : ""}`} onClick={() => onTrancheCountChange(2)}>P1{"\u00B7"}P2</button>
           <button type="button" className={`tranche-count-btn ${trancheCount === 3 ? "active" : ""}`} onClick={() => onTrancheCountChange(3)}>P1{"\u00B7"}P2{"\u00B7"}P3</button>
-          <button type="button" className={`stop-ok-btn ${canExecuteProfit ? "stop-ok-ready" : ""}`} disabled={!canExecuteProfit} onClick={onExecute}>EXECUTE</button>
+          <button type="button" className={`stop-ok-btn ${canExecuteProfit ? "stop-ok-ready" : ""} ${executeFlashing ? "flash" : ""}`} disabled={!canExecuteProfit} onClick={onExecute}>EXECUTE</button>
           <div className="position-summary-header">{activePosition ? `${activeQty}sh active / ${soldQty}sh sold` : "No position"}</div>
         </div>
       </div>

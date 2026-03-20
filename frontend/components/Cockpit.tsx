@@ -24,6 +24,7 @@ const DEFAULT_TRANCHE_MODES: TrancheMode[] = [
 ];
 
 export function Cockpit() {
+  const [flashState, setFlashState] = useState<Record<string, number>>({});
   const [ticker, setTicker] = useState("AAPL");
   const [account, setAccount] = useState<AccountView | null>(null);
   const [setup, setSetup] = useState<SetupResponse | null>(null);
@@ -58,6 +59,18 @@ export function Cockpit() {
   useEffect(() => {
     setupLoadedRef.current = Boolean(setup);
   }, [setup]);
+
+  const pulse = useCallback((key: string) => {
+    setFlashState((current) => ({ ...current, [key]: Date.now() }));
+    window.setTimeout(() => {
+      setFlashState((current) => {
+        if (current[key] === undefined) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }, 420);
+  }, []);
 
   const subscribePrice = useCallback((symbol: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -153,7 +166,8 @@ export function Cockpit() {
     setStopModes(DEFAULT_STOP_MODES);
     subscribePrice(ticker);
     await hydrate({ autoSelectFirst: false });
-  }, [hydrate, subscribePrice, ticker]);
+    pulse("load");
+  }, [hydrate, pulse, subscribePrice, ticker]);
 
   useEffect(() => {
     if (initialAutoloadRef.current) return;
@@ -192,6 +206,7 @@ export function Cockpit() {
       riskPct: account?.risk_pct ?? setup.riskPct
     });
     await hydrate({ autoSelectFirst: false });
+    pulse("preview");
   }
 
   async function enterTrade() {
@@ -207,6 +222,7 @@ export function Cockpit() {
     setStopMode((current) => current || 3);
     await hydrate({ autoSelectFirst: false });
     selectPosition(position.symbol, [position, ...positions]);
+    pulse("enter");
   }
 
   async function executeStops() {
@@ -215,6 +231,7 @@ export function Cockpit() {
     const position = await api.applyStops({ symbol, stopMode, stopModes });
     await hydrate({ autoSelectFirst: false });
     selectPosition(position.symbol);
+    pulse("stop");
   }
 
   async function executeProfit() {
@@ -223,6 +240,7 @@ export function Cockpit() {
     const position = await api.executeProfit({ symbol, trancheModes });
     await hydrate({ autoSelectFirst: false });
     selectPosition(position.symbol);
+    pulse("profit");
   }
 
   async function moveToBe() {
@@ -230,6 +248,7 @@ export function Cockpit() {
     const position = await api.moveToBe(activeSymbol);
     await hydrate({ autoSelectFirst: false });
     selectPosition(position.symbol);
+    pulse("be");
   }
 
   async function flatten() {
@@ -240,11 +259,13 @@ export function Cockpit() {
       activeSymbolRef.current = "";
       setActiveSymbol("");
     }
+    pulse("flatten");
   }
 
   async function clearLogs() {
     await api.clearLogs();
     await hydrate({ autoSelectFirst: false });
+    pulse("clear");
   }
 
   return (
@@ -266,7 +287,10 @@ export function Cockpit() {
           setTrancheCount(3);
           setTrancheModes(DEFAULT_TRANCHE_MODES);
           void hydrate({ autoSelectFirst: false });
+          pulse("reset");
         }}
+        loadFlashing={Boolean(flashState.load)}
+        resetFlashing={Boolean(flashState.reset)}
         phase={phase}
         livePrice={livePrice}
         delta={delta}
@@ -287,6 +311,8 @@ export function Cockpit() {
           entryPrice={entryPrice || setup?.entry || 0}
           stopRef={stopRef}
           manualStop={manualStop || setup?.finalStop || 0}
+          previewFlashing={Boolean(flashState.preview)}
+          enterFlashing={Boolean(flashState.enter)}
           onEntryChange={setEntryPrice}
           onStopRefChange={setStopRef}
           onManualStopChange={setManualStop}
@@ -299,6 +325,9 @@ export function Cockpit() {
           stopModes={stopModes}
           tranches={activePosition?.tranches ?? []}
           orders={activePosition?.orders ?? []}
+          executeFlashing={Boolean(flashState.stop)}
+          moveToBeFlashing={Boolean(flashState.be)}
+          flattenFlashing={Boolean(flashState.flatten)}
           onStopModeChange={setStopMode}
           onStopModeValueChange={(index, value) =>
             setStopModes((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)))
@@ -314,13 +343,14 @@ export function Cockpit() {
           trancheModes={trancheModes}
           tranches={activePosition?.tranches ?? []}
           orders={activePosition?.orders ?? []}
+          executeFlashing={Boolean(flashState.profit)}
           onTrancheCountChange={setTrancheCount}
           onTrancheModeChange={(index, value) =>
             setTrancheModes((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)))
           }
           onExecute={() => void executeProfit()}
         />
-        <ActivityLog logs={logs} onClear={() => void clearLogs()} />
+        <ActivityLog logs={logs} clearFlashing={Boolean(flashState.clear)} onClear={() => void clearLogs()} />
       </div>
     </main>
   );

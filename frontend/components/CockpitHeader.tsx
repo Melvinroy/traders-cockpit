@@ -6,6 +6,8 @@ type Props = {
   onTickerChange: (value: string) => void;
   onLoad: () => void;
   onReset: () => void;
+  loadFlashing?: boolean;
+  resetFlashing?: boolean;
   phase: string;
   livePrice: number | null;
   delta: number;
@@ -14,7 +16,7 @@ type Props = {
 };
 
 export function CockpitHeader(props: Props) {
-  const { ticker, onTickerChange, onLoad, onReset, phase, livePrice, delta, deltaPct, account } = props;
+  const { ticker, onTickerChange, onLoad, onReset, loadFlashing = false, resetFlashing = false, phase, livePrice, delta, deltaPct, account } = props;
   return (
     <div className="header">
       <div className="logo">
@@ -34,10 +36,10 @@ export function CockpitHeader(props: Props) {
             autoComplete="off"
           />
         </div>
-        <button type="button" className="btn btn-cyan" onClick={onLoad}>
+        <button type="button" className={`btn btn-cyan ${loadFlashing ? "flash" : ""}`} onClick={onLoad}>
           {"\u2193"} LOAD SETUP
         </button>
-        <button type="button" className="btn btn-ghost" onClick={onReset}>
+        <button type="button" className={`btn btn-ghost ${resetFlashing ? "flash" : ""}`} onClick={onReset}>
           RESET
         </button>
       </div>

@@ -120,6 +120,12 @@ try {
   $env:BACKEND_URL = "http://127.0.0.1:$BackendPort"
   node ..\scripts\dev\fidelity-baselines.mjs
   node ..\scripts\dev\trade-flow-qc.mjs
+  foreach ($artifactName in @("baseline-idle.png", "baseline-setup-loaded.png", "baseline-trade-entered.png", "baseline-protected.png", "baseline-profit-flow.png")) {
+    $artifact = Join-Path $playwrightOutputDir $artifactName
+    if (-not (Test-Path $artifact)) {
+      throw "Expected fidelity artifact was not created: $artifact"
+    }
+  }
 } finally {
   Remove-Item Env:FRONTEND_URL -ErrorAction SilentlyContinue
   Remove-Item Env:BROWSER_SMOKE_LABEL -ErrorAction SilentlyContinue

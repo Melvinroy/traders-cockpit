@@ -52,19 +52,19 @@ try {
   await page.getByRole("button", { name: "RESET" }).click();
   await page.getByRole("textbox").fill("MSFT");
   await page.getByRole("button", { name: /LOAD SETUP/ }).click();
-  await page.getByText("SETUP LOADED").waitFor({ timeout: 15000 });
+  await page.locator(".state-display").filter({ hasText: "SETUP LOADED" }).waitFor({ timeout: 15000 });
 
   await page.getByRole("button", { name: /\u2197 ENTER TRADE|ENTER TRADE/ }).click();
-  await page.getByText("TRADE ENTERED").waitFor({ timeout: 15000 });
+  await page.locator(".state-display").filter({ hasText: "TRADE ENTERED" }).waitFor({ timeout: 15000 });
   await page.screenshot({ path: path.join(outputDir, "baseline-trade-entered.png"), fullPage: true });
 
   const executeButtons = page.getByRole("button", { name: "EXECUTE" });
   await executeButtons.nth(0).click();
-  await page.getByText("PROTECTED").waitFor({ timeout: 15000 });
+  await page.locator(".state-display").filter({ hasText: "PROTECTED" }).waitFor({ timeout: 15000 });
   await page.screenshot({ path: path.join(outputDir, "baseline-protected.png"), fullPage: true });
 
   await executeButtons.nth(1).click();
-  await page.waitForTimeout(1500);
+  await page.locator(".state-display").filter({ hasText: /P2 DONE|RUNNER ONLY|CLOSED/ }).waitFor({ timeout: 15000 });
   await page.screenshot({ path: path.join(outputDir, "baseline-profit-flow.png"), fullPage: true });
 } finally {
   await browser.close();

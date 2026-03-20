@@ -7,6 +7,9 @@ type Props = {
   stopModes: StopMode[];
   tranches: Tranche[];
   orders: OrderView[];
+  executeFlashing?: boolean;
+  moveToBeFlashing?: boolean;
+  flattenFlashing?: boolean;
   onStopModeChange: (value: number) => void;
   onStopModeValueChange: (index: number, value: StopMode) => void;
   onExecute: () => void;
@@ -15,7 +18,21 @@ type Props = {
 };
 
 export function StopProtectionPanel(props: Props) {
-  const { setup, stopMode, stopModes, tranches, orders, onStopModeChange, onStopModeValueChange, onExecute, onMoveToBe, onFlatten } = props;
+  const {
+    setup,
+    stopMode,
+    stopModes,
+    tranches,
+    orders,
+    executeFlashing = false,
+    moveToBeFlashing = false,
+    flattenFlashing = false,
+    onStopModeChange,
+    onStopModeValueChange,
+    onExecute,
+    onMoveToBe,
+    onFlatten
+  } = props;
   const rows = stopPlanRows(setup, tranches, stopMode, stopModes, orders);
   const hasSetup = Boolean(setup);
   const hasTrade = tranches.length > 0;
@@ -38,7 +55,7 @@ export function StopProtectionPanel(props: Props) {
           <button type="button" className={`tranche-count-btn ${stopMode === 1 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(1)}>S1</button>
           <button type="button" className={`tranche-count-btn ${stopMode === 2 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(2)}>S1{"\u00B7"}S2</button>
           <button type="button" className={`tranche-count-btn ${stopMode === 3 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(3)}>S1{"\u00B7"}S2{"\u00B7"}S3</button>
-          <button type="button" className={`stop-ok-btn ${hasTrade ? "stop-ok-ready" : ""}`} disabled={!hasTrade} onClick={onExecute}>EXECUTE</button>
+          <button type="button" className={`stop-ok-btn ${hasTrade ? "stop-ok-ready" : ""} ${executeFlashing ? "flash" : ""}`} disabled={!hasTrade} onClick={onExecute}>EXECUTE</button>
           <div className="stop-mode-label">{stopModeLabel}</div>
         </div>
       </div>
@@ -81,8 +98,8 @@ export function StopProtectionPanel(props: Props) {
         </div>
       </div>
       <div className="panel-body protect-actions">
-        <button type="button" className="btn btn-ghost" disabled={!hasTrade} onClick={onMoveToBe}>ALL {"\u2192"} BE</button>
-        <button type="button" className="btn btn-red" disabled={!hasTrade} onClick={onFlatten}>{"\u2B1B"} FLATTEN</button>
+        <button type="button" className={`btn btn-ghost ${moveToBeFlashing ? "flash" : ""}`} disabled={!hasTrade} onClick={onMoveToBe}>ALL {"\u2192"} BE</button>
+        <button type="button" className={`btn btn-red ${flattenFlashing ? "flash" : ""}`} disabled={!hasTrade} onClick={onFlatten}>{"\u2B1B"} FLATTEN</button>
       </div>
     </div>
   );

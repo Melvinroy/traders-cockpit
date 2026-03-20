@@ -301,7 +301,8 @@ class CockpitService:
         position.tranche_modes = [item.model_dump() for item in payload.trancheModes]
         position.phase = phase
         position.updated_at = utcnow()
-        self._log(db, position.symbol, "exec", "Profit plan executed")
+        executed = len([tranche for tranche in tranches if tranche["status"] == "sold"])
+        self._log(db, position.symbol, "exec", f"\u2713 Profit plan executed \u2014 {executed} tranche(s) filled")
         db.commit()
         view = self.get_position(db, position.symbol)
         await self.ws_manager.broadcast("cockpit", {"type": "position_update", "symbol": position.symbol, "phase": view.phase, "pnl": self._pnl(view)})
@@ -319,7 +320,7 @@ class CockpitService:
                 order.status = "MODIFIED"
         position.phase = "protected"
         position.updated_at = utcnow()
-        self._log(db, position.symbol, "warn", f"All stops moved to breakeven {position.entry_price:.2f}")
+        self._log(db, position.symbol, "warn", f"All stops \u2192 breakeven: {position.entry_price:.2f}")
         db.commit()
         return self.get_position(db, position.symbol)
 
@@ -356,7 +357,7 @@ class CockpitService:
         position.phase = "closed"
         position.closed_at = utcnow()
         position.updated_at = utcnow()
-        self._log(db, position.symbol, "close", f"Position flattened @ {position.live_price:.2f}")
+        self._log(db, position.symbol, "close", "\u2B1B POSITION FLATTENED \u2014 all tranches closed @ market")
         db.commit()
         view = self.get_position(db, position.symbol)
         await self.ws_manager.broadcast("cockpit", {"type": "position_update", "symbol": position.symbol, "phase": view.phase, "pnl": self._pnl(view)})
@@ -397,7 +398,7 @@ class CockpitService:
         for row in rows:
             db.delete(row)
         db.commit()
-        self._log(db, None, "sys", "Activity log cleared.")
+        self._log(db, None, "sys", "Log cleared.")
         db.commit()
         return cleared
 

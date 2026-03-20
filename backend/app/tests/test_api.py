@@ -117,4 +117,4 @@ def test_activity_log_can_be_cleared() -> None:
     after = client.get("/api/activity-log")
     assert after.status_code == 200
     messages = [entry["message"] for entry in after.json()]
-    assert "Activity log cleared." in messages
+    assert "Log cleared." in messages

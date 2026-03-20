@@ -1,12 +1,12 @@
 import type { LogEntry } from "@/lib/types";
 import { formatLogTime } from "@/lib/cockpit-ui";
 
-export function ActivityLog({ logs, onClear }: { logs: LogEntry[]; onClear: () => void }) {
+export function ActivityLog({ logs, onClear, clearFlashing = false }: { logs: LogEntry[]; onClear: () => void; clearFlashing?: boolean }) {
   return (
     <div className="panel log-panel">
       <div className="panel-header">
         <div className="panel-title">Activity Log</div>
-        <button type="button" className="btn btn-ghost log-clear-btn" onClick={onClear}>CLR</button>
+        <button type="button" className={`btn btn-ghost log-clear-btn ${clearFlashing ? "flash" : ""}`} onClick={onClear}>CLR</button>
       </div>
       <div className="log-body">
         {logs.length ? (
