@@ -37,12 +37,19 @@ async function flattenOpenPositions() {
   }
 }
 
+async function clearActivityLog() {
+  await fetch(`${backendUrl}/api/activity-log`, {
+    method: "DELETE"
+  });
+}
+
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
 
 try {
   await fs.mkdir(outputDir, { recursive: true });
   await flattenOpenPositions();
+  await clearActivityLog();
 
   const response = await page.goto(frontendUrl, { waitUntil: "networkidle" });
   if (!response || response.status() >= 400) {
