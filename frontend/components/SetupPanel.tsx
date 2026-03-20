@@ -25,7 +25,7 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
       <div className="panel-header">
         <div className="panel-title">Setup Parameters</div>
         <div className="panel-symbol" id="setupSymbol">
-          {symbol ? <span className="ticker-symbol-large">{symbol}</span> : "-"}
+          {setup && symbol ? <span className="ticker-symbol-large">{symbol}</span> : "\u2014"}
         </div>
       </div>
       <div className="panel-body" id="setupBody">

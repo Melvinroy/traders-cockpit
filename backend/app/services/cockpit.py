@@ -88,14 +88,16 @@ class CockpitService:
             raise ValueError(self._live_disabled_reason(payload.mode) or "Live trading is disabled")
         account = db.scalar(select(AccountSettingsEntity))
         assert account is not None
+        previous = (account.equity, account.risk_pct, account.mode)
         account.equity = payload.equity
         account.buying_power = payload.equity * 4
         account.risk_pct = payload.risk_pct
         account.mode = payload.mode
         account.updated_at = utcnow()
         db.commit()
-        self._log(db, None, "sys", f"Account settings updated: equity {payload.equity:.2f}")
-        db.commit()
+        if previous != (payload.equity, payload.risk_pct, payload.mode):
+            self._log(db, None, "sys", f"Account settings updated: equity {payload.equity:.2f}")
+            db.commit()
         return self.get_account(db)
 
     def get_setup(self, db: Session, symbol: str) -> SetupResponse:
@@ -198,7 +200,8 @@ class CockpitService:
                 fill_price=payload.entry,
             )
         )
-        self._log(db, symbol, "exec", f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f}")
+        self._log(db, symbol, "exec", f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f} (MKT simulated)")
+        self._log(db, symbol, "sys", "Tranches: " + " \u00b7 ".join(f"T{i+1}={qty}sh" for i, qty in enumerate(qtys)))
         db.commit()
         view = self.get_position(db, symbol)
         await self._broadcast_position_bundle(db, view, pnl=0.0)
@@ -246,7 +249,14 @@ class CockpitService:
         position.stop_modes = [item.model_dump() for item in payload.stopModes]
         position.phase = "protected"
         position.updated_at = utcnow()
-        self._log(db, position.symbol, "warn", f"Stops applied in S{payload.stopMode} mode")
+        stop_lines: list[str] = []
+        for index, group in enumerate(self._stop_groups(current_tranches, payload.stopMode)):
+            config = payload.stopModes[index]
+            pct = 100.0 if config.pct is None else config.pct
+            qty = sum(item["qty"] for item in group)
+            price = position.entry_price if config.mode == "be" else group[0]["stop"]
+            stop_lines.append(f"S{index+1} {qty}sh @ {price:.2f} ({pct:.2f}%)")
+        self._log(db, position.symbol, "warn", f"\u2713 Stops applied \u2014 {' \u00b7 '.join(stop_lines)}")
         db.commit()
         view = self.get_position(db, position.symbol)
         await self._broadcast_position_bundle(db, view)
@@ -593,7 +603,6 @@ class CockpitService:
             return
         for order in stale_orders:
             order.status = "CANCELED"
-        self._log(db, symbol, "sys", "Recovered stale active orders before new trade entry.")
         db.flush()
 
     def _require_position(self, db: Session, symbol: str) -> PositionEntity:

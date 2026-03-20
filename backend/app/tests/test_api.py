@@ -228,5 +228,3 @@ def test_enter_trade_recovers_stale_active_orders_for_closed_symbol() -> None:
         stale = db.scalar(select(OrderEntity).where(OrderEntity.order_id == "ORD-0002"))
         assert stale is not None
         assert stale.status == "CANCELED"
-        messages = [row.message for row in db.scalars(select(TradeLogEntity).order_by(TradeLogEntity.created_at.asc())).all()]
-        assert any("Recovered stale active orders" in message for message in messages)
