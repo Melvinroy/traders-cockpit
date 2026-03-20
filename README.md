@@ -101,6 +101,14 @@ alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+If you are not using `.\scripts\dev\start-local.ps1`, export `DATABASE_URL=postgresql://traders_cockpit:traders_cockpit@127.0.0.1:55432/traders_cockpit` and `REDIS_URL=redis://127.0.0.1:56379/0` before starting the backend.
+
+To apply migrations against the repo-owned local Postgres runtime:
+
+```powershell
+.\scripts\dev\migrate-local.ps1
+```
+
 ### Manual Frontend
 
 ```bash
@@ -119,6 +127,8 @@ Important defaults:
 - live mode disabled unless explicitly allowed
 - local session auth enabled by default
 - broker and market-data adapters can fall back to deterministic local data for development and tests
+- PostgreSQL on `55432` and Redis on `56379` are the default local persistence endpoints
+- SQLite is fallback-only and should be enabled explicitly when needed
 
 ## Architecture Notes
 
