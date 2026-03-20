@@ -1,5 +1,6 @@
 param(
   [int]$FrontendPort = 3010,
+  [int]$FrontendProdPort = 3110,
   [int]$BackendPort = 8010,
   [int]$PostgresPort = 55432,
   [int]$RedisPort = 56379
@@ -50,7 +51,7 @@ try {
 $backendCmd = @(
   "set ""DATABASE_URL=postgresql://traders_cockpit:traders_cockpit@127.0.0.1:$PostgresPort/traders_cockpit""",
   "set ""REDIS_URL=redis://127.0.0.1:$RedisPort/0""",
-  "set ""CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:$FrontendPort,http://localhost:$FrontendPort""",
+  "set ""CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:$FrontendPort,http://localhost:$FrontendPort,http://127.0.0.1:$FrontendProdPort,http://localhost:$FrontendProdPort""",
   "alembic upgrade head",
   "python -m uvicorn app.main:app --host 127.0.0.1 --port $BackendPort"
 ) -join " && "

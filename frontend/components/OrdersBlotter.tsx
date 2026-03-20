@@ -1,4 +1,5 @@
 import type { OrderView } from "@/lib/types";
+import { fp } from "@/lib/cockpit-ui";
 
 export function OrdersBlotter({ orders }: { orders: OrderView[] }) {
   return (
@@ -16,15 +17,15 @@ export function OrdersBlotter({ orders }: { orders: OrderView[] }) {
       <tbody>
         {!orders.length ? (
           <tr>
-            <td colSpan={6}>No orders yet</td>
+            <td colSpan={6} className="orders-empty-cell">No orders yet</td>
           </tr>
         ) : (
           orders.map((order) => (
-            <tr key={order.id}>
+            <tr key={order.id} title={order.brokerOrderId ?? undefined}>
               <td>{order.id}</td>
               <td>{order.type}</td>
               <td>{order.qty}</td>
-              <td>{order.price.toFixed(2)}</td>
+              <td>{fp(order.price)}</td>
               <td className={`order-status-${order.status}`}>{order.status}</td>
               <td>{order.tranche}</td>
             </tr>

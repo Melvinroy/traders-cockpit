@@ -1,4 +1,5 @@
 import type { PositionView } from "@/lib/types";
+import { activeShares, fp, isActivePhase, signedMoney, soldShares } from "@/lib/cockpit-ui";
 
 type Props = {
   positions: PositionView[];
@@ -7,39 +8,81 @@ type Props = {
 };
 
 export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) {
-  const openPositions = positions.filter((position) => position.phase !== "closed");
+  const openPositions = positions.filter((position) => isActivePhase(position.phase));
   if (!openPositions.length) {
     return null;
   }
+
   return (
-    <div>
+    <div className="open-positions-section">
       <div className="op-section-label">
-        Open Positions <span>({openPositions.length})</span>
+        <span>
+          Open Positions <span className="op-count">({openPositions.length})</span>
+        </span>
+        <span className="op-live-badge">{"\u25CF"} LIVE</span>
       </div>
       {openPositions.map((position) => {
-        const entry = position.setup.entry;
-        const activeQty = position.tranches.filter((tranche) => tranche.status === "active").reduce((sum, tranche) => sum + tranche.qty, 0);
-        const pnl = (position.livePrice - entry) * activeQty;
+        const live = position.livePrice || position.setup.entry;
+        const activeQty = activeShares(position);
+        const pnl = (live - position.setup.entry) * activeQty;
+        const stopEnabled = position.stopMode > 0;
+        const profitEnabled = position.phase !== "trade_entered";
+        const isActive = position.symbol === activeSymbol;
+
         return (
           <button
-            type="button"
             key={position.symbol}
-            className={`op-card ${activeSymbol === position.symbol ? "expanded" : ""}`}
+            type="button"
+            className={`op-card ${isActive ? "expanded" : ""}`}
             onClick={() => onSelect(position.symbol)}
           >
             <div className="op-card-header">
               <div className="op-top-row">
                 <span className="op-symbol">{position.symbol}</span>
-                <span className={`op-pnl ${pnl >= 0 ? "op-pnl-pos" : "op-pnl-neg"}`}>{pnl.toFixed(2)}</span>
+                <span className={`op-pnl ${pnl >= 0 ? "op-pnl-pos" : "op-pnl-neg"}`}>{signedMoney(pnl)}</span>
               </div>
-              <div className="op-meta-grid">
+              <div className="op-metrics-row">
                 <div>
                   <span className="op-key">ENTRY</span>
-                  <span className="op-val">{entry.toFixed(2)}</span>
+                  <br />
+                  <span className="op-val">{fp(position.setup.entry)}</span>
                 </div>
                 <div>
                   <span className="op-key">LIVE</span>
-                  <span className="op-val">{position.livePrice.toFixed(2)}</span>
+                  <br />
+                  <span className="op-val">{fp(live)}</span>
+                </div>
+                <div className="op-status-wrap">
+                  <span className={`op-badge ${stopEnabled ? "op-badge-live" : "op-badge-off"}`}>STOP {stopEnabled ? "SET" : "-"}</span>
+                  <span className={`op-badge ${profitEnabled ? "op-badge-info" : "op-badge-off"}`}>PROFIT {profitEnabled ? "ON" : "-"}</span>
+                </div>
+              </div>
+              <div className="op-expand">
+                <div>
+                  <div className="op-expand-label">Phase</div>
+                  <div className="op-val">{position.phase.replaceAll("_", " ").toUpperCase()}</div>
+                </div>
+                <div>
+                  <div className="op-expand-label">Shares</div>
+                  <div className="op-val">
+                    {activeQty} active / {soldShares(position)} sold
+                  </div>
+                </div>
+                <div className="op-tranche-pills">
+                  {position.tranches.map((tranche) => (
+                    <span
+                      key={tranche.id}
+                      className={`op-pill ${
+                        tranche.status === "sold"
+                          ? "op-pill-sold"
+                          : tranche.mode === "runner"
+                            ? "op-pill-runner"
+                            : "op-pill-active"
+                      }`}
+                    >
+                      {tranche.id}
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>

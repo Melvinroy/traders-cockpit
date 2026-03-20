@@ -31,6 +31,7 @@ export type OrderView = {
   tranche: string;
   coveredTranches: string[];
   parentId?: string | null;
+  brokerOrderId?: string | null;
 };
 
 export type SetupResponse = {

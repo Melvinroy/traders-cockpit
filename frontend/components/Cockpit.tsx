@@ -46,26 +46,12 @@ export function Cockpit() {
   );
   const phase = activePosition?.phase ?? (setup ? "setup_loaded" : "idle");
   const livePrice = activePosition?.livePrice ?? setup?.last ?? null;
-  const delta = livePrice && setup ? livePrice - setup.entry : 0;
-  const deltaPct = livePrice && setup ? ((livePrice - setup.entry) / setup.entry) * 100 : 0;
+  const delta = livePrice !== null && setup ? livePrice - setup.entry : 0;
+  const deltaPct = livePrice !== null && setup ? ((livePrice - setup.entry) / setup.entry) * 100 : 0;
 
   useEffect(() => {
     activeSymbolRef.current = activeSymbol;
   }, [activeSymbol]);
-
-  const selectPosition = useCallback((symbol: string, source: PositionView[] = positions) => {
-    const position = source.find((item) => item.symbol === symbol);
-    if (!position) return;
-    setActiveSymbol(symbol);
-    setTicker(symbol);
-    setSetup(position.setup);
-    setEntryPrice(position.setup.entry);
-    setManualStop(position.setup.finalStop);
-    setStopMode(position.stopMode || 3);
-    setStopModes(position.stopModes.length ? position.stopModes : DEFAULT_STOP_MODES);
-    setTrancheCount(position.trancheCount || 3);
-    setTrancheModes(position.trancheModes.length ? position.trancheModes : DEFAULT_TRANCHE_MODES);
-  }, [positions]);
 
   const hydrate = useCallback(async () => {
     const [accountView, positionRows, logRows] = await Promise.all([
@@ -76,11 +62,26 @@ export function Cockpit() {
     setAccount(accountView);
     setPositions(positionRows);
     setLogs(logRows);
+
+    if (activeSymbolRef.current) {
+      const active = positionRows.find((position) => position.symbol === activeSymbolRef.current);
+      if (active) {
+        setSetup(active.setup as SetupResponse);
+        setEntryPrice(active.setup.entry);
+        setManualStop(active.setup.finalStop);
+        setStopMode(active.stopMode || 3);
+        setStopModes(active.stopModes.length ? active.stopModes : DEFAULT_STOP_MODES);
+        setTrancheCount(active.trancheCount || 3);
+        setTrancheModes(active.trancheModes.length ? active.trancheModes : DEFAULT_TRANCHE_MODES);
+        return;
+      }
+    }
+
     if (!activeSymbolRef.current && positionRows[0]) {
       const first = positionRows[0];
       setActiveSymbol(first.symbol);
       setTicker(first.symbol);
-      setSetup(first.setup);
+      setSetup(first.setup as SetupResponse);
       setEntryPrice(first.setup.entry);
       setManualStop(first.setup.finalStop);
       setStopMode(first.stopMode || 3);
@@ -90,20 +91,48 @@ export function Cockpit() {
     }
   }, []);
 
+  const subscribePrice = useCallback((symbol: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ action: "subscribe_price", symbol }));
+    }
+  }, []);
+
+  const selectPosition = useCallback((symbol: string, source: PositionView[] = positions) => {
+    const position = source.find((item) => item.symbol === symbol);
+    if (!position) return;
+    setActiveSymbol(symbol);
+    setTicker(symbol);
+    setSetup(position.setup as SetupResponse);
+    setEntryPrice(position.setup.entry);
+    setManualStop(position.setup.finalStop);
+    setStopMode(position.stopMode || 3);
+    setStopModes(position.stopModes.length ? position.stopModes : DEFAULT_STOP_MODES);
+    setTrancheCount(position.trancheCount || 3);
+    setTrancheModes(position.trancheModes.length ? position.trancheModes : DEFAULT_TRANCHE_MODES);
+    subscribePrice(symbol);
+  }, [positions, subscribePrice]);
+
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
 
   useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:8000/ws/cockpit";
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:8010/ws/cockpit";
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+    ws.onopen = () => {
+      if (activeSymbolRef.current) {
+        ws.send(JSON.stringify({ action: "subscribe_price", symbol: activeSymbolRef.current }));
+      }
+    };
     ws.onmessage = (event) => {
       const payload = JSON.parse(event.data) as Record<string, unknown>;
       if (payload.type === "price" && typeof payload.symbol === "string") {
         setPositions((current) =>
           current.map((position) =>
-            position.symbol === payload.symbol ? { ...position, livePrice: Number(payload.last ?? position.livePrice) } : position
+            position.symbol === payload.symbol
+              ? { ...position, livePrice: Number(payload.last ?? position.livePrice) }
+              : position
           )
         );
       }
@@ -120,9 +149,7 @@ export function Cockpit() {
     setEntryPrice(nextSetup.entry);
     setManualStop(nextSetup.finalStop);
     setActiveSymbol("");
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ action: "subscribe_price", symbol: ticker }));
-    }
+    subscribePrice(ticker);
     await hydrate();
   }
 
@@ -149,19 +176,21 @@ export function Cockpit() {
       trancheModes
     });
     await hydrate();
-    selectPosition(position.symbol);
+    selectPosition(position.symbol, [position, ...positions]);
   }
 
   async function executeStops() {
-    if (!ticker) return;
-    const position = await api.applyStops({ symbol: activeSymbol || ticker, stopMode, stopModes });
+    const symbol = activeSymbol || ticker;
+    if (!symbol) return;
+    const position = await api.applyStops({ symbol, stopMode, stopModes });
     await hydrate();
     selectPosition(position.symbol);
   }
 
   async function executeProfit() {
-    if (!ticker) return;
-    const position = await api.executeProfit({ symbol: activeSymbol || ticker, trancheModes });
+    const symbol = activeSymbol || ticker;
+    if (!symbol) return;
+    const position = await api.executeProfit({ symbol, trancheModes });
     await hydrate();
     selectPosition(position.symbol);
   }
@@ -177,7 +206,14 @@ export function Cockpit() {
     if (!activeSymbol) return;
     const position = await api.flatten(activeSymbol);
     await hydrate();
-    selectPosition(position.symbol);
+    if (position.phase === "closed") {
+      setActiveSymbol("");
+    }
+  }
+
+  async function clearLogs() {
+    await api.clearLogs();
+    await hydrate();
   }
 
   return (
@@ -189,8 +225,13 @@ export function Cockpit() {
         onReset={() => {
           setSetup(null);
           setActiveSymbol("");
-          setPositions([]);
-          setLogs([]);
+          setTicker("AAPL");
+          setEntryPrice(0);
+          setManualStop(0);
+          setStopMode(3);
+          setStopModes(DEFAULT_STOP_MODES);
+          setTrancheCount(3);
+          setTrancheModes(DEFAULT_TRANCHE_MODES);
           void hydrate();
         }}
         phase={phase}
@@ -205,7 +246,7 @@ export function Cockpit() {
           setup={setup}
           entryPrice={entryPrice || setup?.entry || 0}
           stopRef={stopRef}
-          manualStop={manualStop}
+          manualStop={manualStop || setup?.finalStop || 0}
           onEntryChange={setEntryPrice}
           onStopRefChange={setStopRef}
           onManualStopChange={setManualStop}
@@ -213,9 +254,12 @@ export function Cockpit() {
           onEnterTrade={() => void enterTrade()}
         />
         <StopProtectionPanel
+          setup={setup}
+          phase={phase}
           stopMode={stopMode}
           stopModes={stopModes}
           tranches={activePosition?.tranches ?? []}
+          orders={activePosition?.orders ?? []}
           onStopModeChange={setStopMode}
           onStopModeValueChange={(index, value) =>
             setStopModes((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)))
@@ -225,6 +269,8 @@ export function Cockpit() {
           onFlatten={() => void flatten()}
         />
         <ProfitTakingPanel
+          setup={setup}
+          activePosition={activePosition}
           trancheCount={trancheCount}
           trancheModes={trancheModes}
           tranches={activePosition?.tranches ?? []}
@@ -235,7 +281,7 @@ export function Cockpit() {
           }
           onExecute={() => void executeProfit()}
         />
-        <ActivityLog logs={logs} />
+        <ActivityLog logs={logs} onClear={() => void clearLogs()} />
       </div>
     </main>
   );

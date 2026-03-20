@@ -13,7 +13,7 @@ $repoRoot = Get-RepoRoot
 foreach ($port in @($FrontendPort, $BackendPort)) {
   $listener = Get-PortListener -Port $port
   if ($null -ne $listener) {
-    Stop-Process -Id $listener.OwningProcess -Force
+    Stop-PortListenerProcess -Port $port
     Write-Host "Stopped process on port $port"
   }
 }

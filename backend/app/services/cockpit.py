@@ -377,6 +377,16 @@ class CockpitService:
         rows = db.scalars(select(TradeLogEntity).order_by(TradeLogEntity.created_at.desc()).limit(200)).all()
         return [LogEntry.model_validate(row, from_attributes=True) for row in rows]
 
+    def clear_logs(self, db: Session) -> int:
+        rows = db.scalars(select(TradeLogEntity)).all()
+        cleared = len(rows)
+        for row in rows:
+            db.delete(row)
+        db.commit()
+        self._log(db, None, "sys", "Activity log cleared.")
+        db.commit()
+        return cleared
+
     async def publish_price_tick(self, db: Session, symbol: str) -> None:
         position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol.upper()))
         if position is None:

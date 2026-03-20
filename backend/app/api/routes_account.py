@@ -23,4 +23,8 @@ def build_router(service: CockpitService) -> APIRouter:
     def get_logs(db: Session = Depends(get_db)) -> list[LogEntry]:
         return service.get_logs(db)
 
+    @router.delete("/activity-log")
+    def clear_logs(db: Session = Depends(get_db)) -> dict[str, int]:
+        return {"cleared": service.clear_logs(db)}
+
     return router

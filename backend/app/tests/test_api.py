@@ -86,3 +86,18 @@ def test_account_update() -> None:
     data = update.json()
     assert data["equity"] == 30000
     assert data["risk_pct"] == 1.5
+
+
+def test_activity_log_can_be_cleared() -> None:
+    before = client.get("/api/activity-log")
+    assert before.status_code == 200
+    assert len(before.json()) >= 1
+
+    cleared = client.delete("/api/activity-log")
+    assert cleared.status_code == 200
+    assert cleared.json()["cleared"] >= 1
+
+    after = client.get("/api/activity-log")
+    assert after.status_code == 200
+    messages = [entry["message"] for entry in after.json()]
+    assert "Activity log cleared." in messages
