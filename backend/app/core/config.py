@@ -74,6 +74,8 @@ class Settings:
     ops_api_key: str
     ops_admin_api_key: str
     ops_signing_secret: str
+    sqlite_fallback_url: str
+    allow_sqlite_fallback: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -87,7 +89,13 @@ class Settings:
             "test": "test",
             "testing": "test",
         }.get(app_env_raw, "development")
-        default_db = "sqlite:///./data/traders_cockpit.db"
+        sqlite_fallback_url = os.getenv("SQLITE_FALLBACK_URL", "sqlite:///./data/traders_cockpit.db").strip()
+        allow_sqlite_fallback = _as_bool(os.getenv("ALLOW_SQLITE_FALLBACK", "false"))
+        default_db = (
+            sqlite_fallback_url
+            if app_env == "test" or allow_sqlite_fallback
+            else "postgresql://traders_cockpit:traders_cockpit@127.0.0.1:55432/traders_cockpit"
+        )
         return cls(
             app_env=app_env,
             auth_require_login=_as_bool(os.getenv("AUTH_REQUIRE_LOGIN", "true"), True),
@@ -99,7 +107,7 @@ class Settings:
             auth_trader_username=os.getenv("AUTH_TRADER_USERNAME", "trader").strip(),
             auth_trader_password=os.getenv("AUTH_TRADER_PASSWORD", "trader123!").strip(),
             database_url=os.getenv("DATABASE_URL", default_db).strip(),
-            redis_url=os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0").strip(),
+            redis_url=os.getenv("REDIS_URL", "redis://127.0.0.1:56379/0").strip(),
             cors_origins=[
                 item.strip()
                 for item in os.getenv(
@@ -135,6 +143,8 @@ class Settings:
             ops_api_key=os.getenv("OPS_API_KEY", "").strip(),
             ops_admin_api_key=os.getenv("OPS_ADMIN_API_KEY", "").strip(),
             ops_signing_secret=os.getenv("OPS_SIGNING_SECRET", "").strip(),
+            sqlite_fallback_url=sqlite_fallback_url,
+            allow_sqlite_fallback=allow_sqlite_fallback,
         )
 
     @property
@@ -144,3 +154,7 @@ class Settings:
     @property
     def has_alpaca_credentials(self) -> bool:
         return bool(self.alpaca_api_key_id and self.alpaca_api_secret_key)
+
+    @property
+    def uses_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")

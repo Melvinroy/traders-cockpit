@@ -22,7 +22,8 @@ service = CockpitService(settings, ws_manager)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    if settings.uses_sqlite:
+        Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         service.ensure_seed_data(db)
     yield
