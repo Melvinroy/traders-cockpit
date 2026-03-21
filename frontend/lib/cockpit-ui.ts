@@ -82,7 +82,7 @@ export function stopPlanRows(
   stopMode: number,
   stopModes: StopMode[],
   orders: OrderView[]
-): Array<{ label: string; qty: number; price: number; pct: number; mode: StopMode["mode"]; status: string }> {
+): Array<{ label: string; qty: number; price: number; pct: number; mode: StopMode["mode"]; status: string; coveredTranches: string[] }> {
   if (!setup) return [];
   const modeCount = stopMode || 3;
   const stopOrders = orders
@@ -100,7 +100,8 @@ export function stopPlanRows(
         price: order.price,
         pct: config.mode === "be" ? 0 : (config.pct ?? autoPct),
         mode: config.mode,
-        status: order.status
+        status: order.status,
+        coveredTranches: order.coveredTranches
       };
     });
   }
@@ -137,7 +138,8 @@ export function stopPlanRows(
       price,
       pct,
       mode: config.mode,
-      status: activeOrder ? activeOrder.status : "PREVIEW"
+      status: activeOrder ? activeOrder.status : "PREVIEW",
+      coveredTranches: group.map((tranche) => tranche.id)
     };
   });
 }
