@@ -1,10 +1,10 @@
 # Local-First Paper Trading and Repo Hygiene
 
-> Status: In Progress
+> Status: Closed
 > Branch: `codex/feature-local-paper-and-repo-hygiene`
 > Opened: 2026-03-22
-> Closed: -
-> Closing Commit: -
+> Closed: 2026-03-22
+> Closing Commit: bd0e6f2
 
 ## Problem
 
