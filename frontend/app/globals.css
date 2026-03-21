@@ -49,6 +49,89 @@ body {
   overflow-x: hidden;
 }
 
+.login-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 32px;
+  background:
+    radial-gradient(circle at top right, rgba(0, 200, 212, 0.08), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(155, 127, 232, 0.08), transparent 32%),
+    var(--bg0);
+}
+
+.login-card {
+  width: min(100%, 420px);
+  padding: 28px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(15, 18, 24, 0.98), rgba(10, 12, 15, 0.98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.login-eyebrow,
+.login-label,
+.auth-user span {
+  color: var(--text2);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.login-title {
+  margin: 10px 0 8px;
+  color: var(--text0);
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.login-copy {
+  margin-bottom: 18px;
+  color: var(--text1);
+  line-height: 1.6;
+}
+
+.login-form {
+  display: grid;
+  gap: 12px;
+}
+
+.login-field {
+  display: grid;
+  gap: 6px;
+}
+
+.login-field input {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  outline: none;
+  background: var(--bg3);
+  color: var(--text0);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.login-field input:focus {
+  border-color: var(--cyan);
+}
+
+.login-error,
+.runtime-banner {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 64, 96, 0.35);
+  background: rgba(255, 64, 96, 0.08);
+  color: var(--red);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+}
+
+.login-submit {
+  width: 100%;
+}
+
 nextjs-portal {
   display: none !important;
 }
@@ -70,6 +153,27 @@ select {
   padding: 0 20px;
   background: var(--bg1);
   border-bottom: 1px solid var(--border);
+}
+
+.auth-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-user {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text0);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+}
+
+.auth-logout-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 9px;
 }
 
 .logo {
@@ -315,6 +419,12 @@ select {
   gap: 1px;
   height: calc(100vh - 52px);
   background: var(--border);
+}
+
+.runtime-banner {
+  margin: 1px;
+  border-left: none;
+  border-right: none;
 }
 
 .panel {

@@ -11,7 +11,7 @@ This matrix tracks implementation status, reuse decisions, and remaining work fo
 | Orders blotter and activity log | Partial | Functional and increasingly audit-friendly | Reused recovery-first conventions | More visual and audit-detail polish |
 | FastAPI service | Complete | Core lifecycle, account, positions, orders, logs, and auth routes are present | Reused app-structure and safety patterns | Continue hosted hardening |
 | Env/config bootstrapping | Complete | Root/backend `.env` bootstrapping with typed settings | Adapted from `TradeCtrl` config bootstrap and naming | Continue env parity when new hosted requirements appear |
-| Auth/session handling | Partial | Session-backed login with seeded dev users and opaque cookie tokens | Adapted from `TradeCtrl` auth store and session model | Enforce auth on more routes when frontend login UX is ready |
+| Auth/session handling | Complete | Session-backed login with seeded dev users, protected API routes, authenticated websocket entry, and frontend login/logout UX | Adapted from `TradeCtrl` auth store and session model | Add stronger hosted role/ops policy if needed |
 | Broker mode and live gating | Complete | Paper-first, live explicitly gated | Reused `TradeCtrl` safety model and env names | Add deeper production operator checks if needed |
 | Alpaca integration | Partial | Paper/live config and adapter scaffolding exist | Reuse adapter shape, env names, and controller conventions from `TradeCtrl` | Deeper real-broker reconciliation and hosted validation |
 | Market data normalization | Partial | Setup contract is normalized for the cockpit UI | Reused provider/env naming conventions | More provider-specific validation |
