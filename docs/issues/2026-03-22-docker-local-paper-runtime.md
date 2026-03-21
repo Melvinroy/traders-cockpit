@@ -1,8 +1,8 @@
-> Status: Open
+> Status: Closed
 > Branch: codex/feature-docker-local-paper-runtime
 > Opened: 2026-03-22
-> Closed:
-> Closing Commit:
+> Closed: 2026-03-22
+> Closing Commit: a5453e9
 
 ## Issue
 
