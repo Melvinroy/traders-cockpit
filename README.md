@@ -193,6 +193,28 @@ For release preparation, use:
 - [`docs/process/STAGING_RELEASE_PLAYBOOK.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/STAGING_RELEASE_PLAYBOOK.md)
 - [`docs/handoffs/2026-03-21-integration-readiness.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/handoffs/2026-03-21-integration-readiness.md)
 
+## Hosted Deployment
+
+Recommended hosted topology:
+
+- frontend on Vercel
+- backend on Render or another Docker-capable host
+- managed Postgres
+- managed Redis
+
+Deployment assets now included:
+
+- [`frontend/Dockerfile`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/frontend/Dockerfile)
+- [`backend/Dockerfile`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/backend/Dockerfile)
+- [`render.yaml`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/render.yaml)
+- [`docs/process/HOSTED_DEPLOYMENT.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/process/HOSTED_DEPLOYMENT.md)
+
+Validate hosted envs before deploy:
+
+```powershell
+.\scripts\dev\check-hosted-env.ps1 -EnvFile ".env"
+```
+
 ## OSS
 
 - License: MIT
