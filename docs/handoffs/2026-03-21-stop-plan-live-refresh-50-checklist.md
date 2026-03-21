@@ -1,0 +1,55 @@
+# Stop Plan And Live Refresh 50-Point Checklist
+
+## Scope
+This checklist covers stop-plan correctness, UI clarity, browser regression coverage, and staged delivery for the current tranche.
+
+- [x] 1. Create a dedicated issue for stop-plan regression hardening.
+- [x] 2. Create a dedicated issue for stop coverage hints.
+- [x] 3. Branch from `codex/integration-app`.
+- [x] 4. Keep work on a `codex/*` branch.
+- [x] 5. Preserve issue-first workflow.
+- [x] 6. Preserve staged merge workflow.
+- [x] 7. Keep the stop plan selector on the protected panel.
+- [x] 8. Keep `S1` visible in the selector.
+- [x] 9. Keep `S1·S2` visible in the selector.
+- [x] 10. Keep `S1·S2·S3` visible in the selector.
+- [x] 11. Fix backend default stop splitting for blank three-stop mode.
+- [x] 12. Preserve `33 / 33 / 34` behavior for blank three-stop mode.
+- [x] 13. Add backend regression coverage for blank three-stop mode.
+- [x] 14. Keep stop plan rows visible in active later states.
+- [x] 15. Preserve committed `S1`, `S2`, and `S3` rows in `RUNNER ONLY`.
+- [x] 16. Make `S1` selector show 1 row.
+- [x] 17. Make `S1·S2` selector show 2 rows.
+- [x] 18. Make `S1·S2·S3` selector show 3 rows.
+- [x] 19. Ensure selector row counts work before stop execution.
+- [x] 20. Ensure selector row counts work after stop execution.
+- [x] 21. Ensure selector row counts work after profit execution.
+- [x] 22. Add browser QC for stop selector row counts.
+- [x] 23. Add browser QC artifact for stop selector counts.
+- [x] 24. Keep browser QC in repo-owned scripts.
+- [x] 25. Use the existing Playwright-driven QC path.
+- [x] 26. Make stop-row statuses visually distinct.
+- [x] 27. Style `ACTIVE` rows clearly.
+- [x] 28. Style `MODIFIED` rows clearly.
+- [x] 29. Style `CANCELED` rows clearly.
+- [x] 30. Style `PREVIEW` rows clearly.
+- [x] 31. Keep status styling in the terminal visual language.
+- [x] 32. Add tranche coverage hints to stop-plan rows.
+- [x] 33. Use committed `coveredTranches` when live stop orders exist.
+- [x] 34. Use preview grouping when stop orders do not exist yet.
+- [x] 35. Show grouped tranche coverage for `S1`.
+- [x] 36. Show grouped tranche coverage for `S1·S2`.
+- [x] 37. Show one-tranche coverage for `S1·S2·S3`.
+- [x] 38. Keep coverage visible in preview state.
+- [x] 39. Keep coverage visible in protected state.
+- [x] 40. Keep coverage visible in runner-only state.
+- [x] 41. Add browser validation for coverage pills.
+- [x] 42. Add screenshot artifact for coverage hints.
+- [x] 43. Keep lint passing after the changes.
+- [x] 44. Keep typecheck passing after the changes.
+- [x] 45. Keep full repo QC passing after the changes.
+- [x] 46. Commit the feature tranche cleanly.
+- [x] 47. Merge the tranche into `codex/integration-app`.
+- [x] 48. Re-run integration QC after merge.
+- [x] 49. Promote the tranche into `main`.
+- [ ] 50. Push the final promoted state to GitHub.

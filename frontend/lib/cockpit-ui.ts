@@ -76,6 +76,15 @@ export function stopGroups(tranches: Tranche[], stopMode: number): Tranche[][] {
   return active.map((tranche) => [tranche]);
 }
 
+function allTrancheStopGroups(tranches: Tranche[], stopMode: number): Tranche[][] {
+  if (stopMode <= 1) return [tranches];
+  if (stopMode === 2) {
+    const midpoint = Math.max(1, Math.floor(tranches.length / 2));
+    return [tranches.slice(0, midpoint), tranches.slice(midpoint)];
+  }
+  return tranches.map((tranche) => [tranche]);
+}
+
 export function stopPlanRows(
   setup: SetupResponse | null,
   tranches: Tranche[],
@@ -89,6 +98,7 @@ export function stopPlanRows(
     .filter((order) => order.type === "STOP")
     .sort((left, right) => Number(left.tranche.replace("S", "")) - Number(right.tranche.replace("S", "")));
   if (stopOrders.length > 0 && stopOrders.length === modeCount) {
+    const coverageGroups = allTrancheStopGroups(tranches, modeCount);
     return stopOrders.map((order, index) => {
       const config = stopModes[index] ?? { mode: "stop", pct: null };
       const autoPct = index === stopOrders.length - 1
@@ -101,7 +111,9 @@ export function stopPlanRows(
         pct: config.mode === "be" ? 0 : (config.pct ?? autoPct),
         mode: config.mode,
         status: order.status,
-        coveredTranches: order.coveredTranches
+        coveredTranches: order.coveredTranches.length
+          ? order.coveredTranches
+          : (coverageGroups[index] ?? []).map((tranche) => tranche.id)
       };
     });
   }
