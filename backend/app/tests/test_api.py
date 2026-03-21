@@ -97,6 +97,25 @@ def test_login_creates_session_and_me_resolves_user() -> None:
     assert after.status_code == 401
 
 
+def test_staging_cookie_settings_can_support_hosted_preview() -> None:
+    import app.api.routes_auth as routes_auth_module
+
+    original_samesite = routes_auth_module.settings.auth_cookie_samesite
+    original_secure = routes_auth_module.settings.auth_cookie_secure
+    routes_auth_module.settings.auth_cookie_samesite = "none"
+    routes_auth_module.settings.auth_cookie_secure = True
+    try:
+        login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123!"})
+        assert login.status_code == 200
+        cookie_header = login.headers.get("set-cookie", "").lower()
+        assert "samesite=none" in cookie_header
+        assert "secure" in cookie_header
+    finally:
+        routes_auth_module.settings.auth_cookie_samesite = original_samesite
+        routes_auth_module.settings.auth_cookie_secure = original_secure
+        client.post("/api/auth/logout")
+
+
 def test_sensitive_routes_require_session_when_auth_is_enabled() -> None:
     previous = deps_auth.settings.auth_require_login
     deps_auth.settings.auth_require_login = True
