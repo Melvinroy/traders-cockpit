@@ -24,6 +24,7 @@
 - [`Traders Cockpit.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/Traders%20Cockpit.md) is the backend and architecture contract
 - `TradeCtrl` is the process and repo-hygiene reference
 - [`docs/architecture/OVERVIEW.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/architecture/OVERVIEW.md) documents the current runtime architecture
+- [`docs/architecture/COMPONENT_MATRIX.md`](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/docs/architecture/COMPONENT_MATRIX.md) tracks component status and TradeCtrl reuse boundaries
 
 ## Development Workflow
 
@@ -127,6 +128,7 @@ Important defaults:
 - paper mode first
 - live mode disabled unless explicitly allowed
 - local session auth enabled by default
+- auth sessions are stored separately from trading data in `AUTH_DB_PATH`, following the TradeCtrl session-store pattern without sharing the same database
 - broker and market-data adapters can fall back to deterministic local data for development and tests
 - PostgreSQL on `55432` and Redis on `56379` are the default local persistence endpoints
 - SQLite is fallback-only and should be enabled explicitly when needed
@@ -144,6 +146,7 @@ Additional realtime/safety envs:
 - Orders use parent-child hierarchy rooted on the entry order.
 - Realtime fanout uses Redis when available and falls back to single-process websocket broadcast in local-only scenarios.
 - Live trading is scaffolded but disabled by default.
+- TradeCtrl reuse is intentional for config/auth/safety patterns, while trading DB state stays isolated to `traders-cockpit`.
 
 ## Realtime Contract
 

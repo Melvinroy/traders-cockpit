@@ -163,3 +163,4 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     username: str
     role: str
+    expires_at: str | None = None

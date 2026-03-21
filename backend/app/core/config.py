@@ -44,9 +44,13 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
 @dataclass
 class Settings:
     app_env: str
+    app_default_role: str
+    allow_app_role_override: bool
+    require_ops_auth: bool
     auth_require_login: bool
     auth_session_ttl_hours: int
     auth_cookie_name: str
+    auth_db_path: str
     auth_seed_users: bool
     auth_admin_username: str
     auth_admin_password: str
@@ -90,8 +94,15 @@ class Settings:
             "test": "test",
             "testing": "test",
         }.get(app_env_raw, "development")
+        app_default_role_raw = os.getenv("APP_DEFAULT_ROLE", "admin").strip().lower()
+        app_default_role = app_default_role_raw if app_default_role_raw in {"admin", "trader"} else "admin"
+        allow_role_override_default = "false" if app_env == "production" else "true"
+        allow_role_override = _as_bool(os.getenv("APP_ALLOW_ROLE_OVERRIDE", allow_role_override_default))
+        require_ops_auth_default = "true" if app_env == "production" else "false"
+        require_ops_auth = _as_bool(os.getenv("OPS_REQUIRE_AUTH", require_ops_auth_default))
         sqlite_fallback_url = os.getenv("SQLITE_FALLBACK_URL", "sqlite:///./data/traders_cockpit.db").strip()
         allow_sqlite_fallback = _as_bool(os.getenv("ALLOW_SQLITE_FALLBACK", "false"))
+        auth_db_path = os.getenv("AUTH_DB_PATH", "./data/auth.db").strip() or "./data/auth.db"
         default_db = (
             sqlite_fallback_url
             if app_env == "test" or allow_sqlite_fallback
@@ -99,9 +110,13 @@ class Settings:
         )
         return cls(
             app_env=app_env,
+            app_default_role=app_default_role,
+            allow_app_role_override=allow_role_override,
+            require_ops_auth=require_ops_auth,
             auth_require_login=_as_bool(os.getenv("AUTH_REQUIRE_LOGIN", "true"), True),
             auth_session_ttl_hours=max(1, int(os.getenv("AUTH_SESSION_TTL_HOURS", "24"))),
             auth_cookie_name=os.getenv("AUTH_COOKIE_NAME", "traders_cockpit_session").strip(),
+            auth_db_path=auth_db_path,
             auth_seed_users=_as_bool(os.getenv("AUTH_SEED_USERS", "true"), True),
             auth_admin_username=os.getenv("AUTH_ADMIN_USERNAME", "admin").strip(),
             auth_admin_password=os.getenv("AUTH_ADMIN_PASSWORD", "admin123!").strip(),

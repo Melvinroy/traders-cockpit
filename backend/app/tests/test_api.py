@@ -10,8 +10,12 @@ from sqlalchemy import select
 db_path = Path(__file__).resolve().parent / "test.db"
 if db_path.exists():
     db_path.unlink()
+auth_db_path = Path(__file__).resolve().parent / "auth-test.db"
+if auth_db_path.exists():
+    auth_db_path.unlink()
 
 os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+os.environ["AUTH_DB_PATH"] = str(auth_db_path)
 os.environ["AUTH_REQUIRE_LOGIN"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -20,9 +24,20 @@ from app.db.base import Base  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.entities import OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
+from app.services.auth import get_auth_store  # noqa: E402
+from app.core.config import Settings  # noqa: E402
 
+Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
+auth_store = get_auth_store(Settings.from_env())
+auth_store.bootstrap_users(
+    admin_username="admin",
+    admin_password="admin123!",
+    trader_username="trader",
+    trader_password="trader123!",
+    seed_enabled=True,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +47,14 @@ def reset_db() -> None:
         db.query(PositionEntity).delete()
         db.query(TradeLogEntity).delete()
         db.commit()
+    auth_store.reset_for_tests()
+    auth_store.bootstrap_users(
+        admin_username="admin",
+        admin_password="admin123!",
+        trader_username="trader",
+        trader_password="trader123!",
+        seed_enabled=True,
+    )
     yield
 
 
@@ -52,6 +75,26 @@ def test_setup_endpoint_returns_contract() -> None:
     assert data["entryBasis"] == "bid_ask_midpoint"
     assert data["entry"] > data["finalStop"]
     assert data["shares"] > 0
+
+
+def test_login_creates_session_and_me_resolves_user() -> None:
+    login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123!"})
+    assert login.status_code == 200
+    payload = login.json()
+    assert payload["username"] == "admin"
+    assert payload["role"] == "admin"
+    assert payload["expires_at"]
+    assert "set-cookie" in login.headers
+
+    me = client.get("/api/auth/me")
+    assert me.status_code == 200
+    assert me.json()["username"] == "admin"
+
+    logout = client.post("/api/auth/logout")
+    assert logout.status_code == 200
+
+    after = client.get("/api/auth/me")
+    assert after.status_code == 401
 
 
 def test_trade_lifecycle() -> None:
