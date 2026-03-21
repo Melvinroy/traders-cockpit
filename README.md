@@ -128,6 +128,7 @@ Important defaults:
 - paper mode first
 - live mode disabled unless explicitly allowed
 - local session auth enabled by default
+- staged/hosted deployments should use `AUTH_COOKIE_SAMESITE=none` and `AUTH_COOKIE_SECURE=true` so the hosted frontend can authenticate against a separate backend origin
 - auth sessions are stored separately from trading data in `AUTH_DB_PATH`, following the TradeCtrl session-store pattern without sharing the same database
 - broker and market-data adapters can fall back to deterministic local data for development and tests
 - PostgreSQL on `55432` and Redis on `56379` are the default local persistence endpoints

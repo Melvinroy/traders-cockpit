@@ -50,6 +50,8 @@ class Settings:
     auth_require_login: bool
     auth_session_ttl_hours: int
     auth_cookie_name: str
+    auth_cookie_samesite: str
+    auth_cookie_secure: bool
     auth_db_path: str
     auth_seed_users: bool
     auth_admin_username: str
@@ -103,6 +105,10 @@ class Settings:
         sqlite_fallback_url = os.getenv("SQLITE_FALLBACK_URL", "sqlite:///./data/traders_cockpit.db").strip()
         allow_sqlite_fallback = _as_bool(os.getenv("ALLOW_SQLITE_FALLBACK", "false"))
         auth_db_path = os.getenv("AUTH_DB_PATH", "./data/auth.db").strip() or "./data/auth.db"
+        auth_cookie_secure_default = "true" if app_env in {"staging", "production"} else "false"
+        auth_cookie_samesite_default = "none" if app_env in {"staging", "production"} else "lax"
+        auth_cookie_samesite_raw = os.getenv("AUTH_COOKIE_SAMESITE", auth_cookie_samesite_default).strip().lower()
+        auth_cookie_samesite = auth_cookie_samesite_raw if auth_cookie_samesite_raw in {"lax", "strict", "none"} else auth_cookie_samesite_default
         default_db = (
             sqlite_fallback_url
             if app_env == "test" or allow_sqlite_fallback
@@ -116,6 +122,8 @@ class Settings:
             auth_require_login=_as_bool(os.getenv("AUTH_REQUIRE_LOGIN", "true"), True),
             auth_session_ttl_hours=max(1, int(os.getenv("AUTH_SESSION_TTL_HOURS", "24"))),
             auth_cookie_name=os.getenv("AUTH_COOKIE_NAME", "traders_cockpit_session").strip(),
+            auth_cookie_samesite=auth_cookie_samesite,
+            auth_cookie_secure=_as_bool(os.getenv("AUTH_COOKIE_SECURE", auth_cookie_secure_default)),
             auth_db_path=auth_db_path,
             auth_seed_users=_as_bool(os.getenv("AUTH_SEED_USERS", "true"), True),
             auth_admin_username=os.getenv("AUTH_ADMIN_USERNAME", "admin").strip(),
