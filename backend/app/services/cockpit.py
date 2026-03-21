@@ -216,7 +216,7 @@ class CockpitService:
         current_tranches = deepcopy(position.tranches)
         for index, group in enumerate(self._stop_groups(current_tranches, payload.stopMode)):
             config = payload.stopModes[index]
-            pct = 100.0 if config.pct is None else config.pct
+            pct = self._default_stop_pct(config, index, payload.stopMode)
             price = (
                 position.entry_price
                 if config.mode == "be"
@@ -252,7 +252,7 @@ class CockpitService:
         stop_lines: list[str] = []
         for index, group in enumerate(self._stop_groups(current_tranches, payload.stopMode)):
             config = payload.stopModes[index]
-            pct = 100.0 if config.pct is None else config.pct
+            pct = self._default_stop_pct(config, index, payload.stopMode)
             qty = sum(item["qty"] for item in group)
             price = position.entry_price if config.mode == "be" else group[0]["stop"]
             stop_lines.append(f"S{index+1} {qty}sh @ {price:.2f} ({pct:.2f}%)")
@@ -519,6 +519,14 @@ class CockpitService:
             midpoint = max(1, len(active) // 2)
             return [active[:midpoint], active[midpoint:]]
         return [[tranche] for tranche in active]
+
+    def _default_stop_pct(self, config: StopMode, index: int, stop_mode: int) -> float:
+        if config.mode == "be":
+            return 0.0
+        if config.pct is not None:
+            return config.pct
+        base = floor(100 / stop_mode)
+        return float(100 - base * index) if index == stop_mode - 1 else float(base)
 
     def _resolve_target_price(self, entry: float, per_share_risk: float, mode: TrancheMode) -> float:
         if mode.target == "Manual" and mode.manualPrice is not None:
