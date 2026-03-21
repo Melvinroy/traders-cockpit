@@ -12,12 +12,14 @@ from app.api.routes_auth import router as auth_router
 from app.core.config import Settings
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
+from app.services.auth import get_auth_store
 from app.services.cockpit import CockpitService
 from app.ws.manager import WebSocketManager
 
 settings = Settings.from_env()
 ws_manager = WebSocketManager(settings.redis_url, settings.redis_channel_prefix)
 service = CockpitService(settings, ws_manager)
+auth_store = get_auth_store(settings)
 
 
 @asynccontextmanager
@@ -25,6 +27,13 @@ async def lifespan(app: FastAPI):
     await ws_manager.start()
     if settings.uses_sqlite:
         Base.metadata.create_all(bind=engine)
+    auth_store.bootstrap_users(
+        admin_username=settings.auth_admin_username,
+        admin_password=settings.auth_admin_password,
+        trader_username=settings.auth_trader_username,
+        trader_password=settings.auth_trader_password,
+        seed_enabled=settings.auth_seed_users,
+    )
     with SessionLocal() as db:
         service.ensure_seed_data(db)
     yield
