@@ -1,10 +1,11 @@
 import type { OrderView, PositionView, SetupResponse, StopMode, Tranche, TrancheMode } from "@/lib/types";
 
-export const ACTIVE_PHASES = ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"] as const;
+export const ACTIVE_PHASES = ["entry_pending", "trade_entered", "protected", "P1_done", "P2_done", "runner_only"] as const;
 
 const PHASE_LABELS: Record<string, string> = {
   idle: "IDLE",
   setup_loaded: "SETUP LOADED",
+  entry_pending: "ENTRY SUBMITTED",
   trade_entered: "TRADE ENTERED",
   protected: "PROTECTED",
   P1_done: "P1 DONE",

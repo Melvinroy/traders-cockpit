@@ -31,6 +31,12 @@ class BrokerAdapter:
     def close_position(self, symbol: str) -> BrokerOrderResult:
         raise NotImplementedError
 
+    def wait_for_position(self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0) -> int:
+        raise NotImplementedError
+
+    def cancel_order(self, broker_order_id: str) -> None:
+        raise NotImplementedError
+
 
 class PaperBrokerAdapter(BrokerAdapter):
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
@@ -49,6 +55,12 @@ class PaperBrokerAdapter(BrokerAdapter):
 
     def close_position(self, symbol: str) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="FILLED")
+
+    def wait_for_position(self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0) -> int:
+        return min_qty
+
+    def cancel_order(self, broker_order_id: str) -> None:
+        return None
 
 
 class AlpacaBrokerAdapter(BrokerAdapter):
@@ -84,6 +96,17 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             return BrokerOrderResult(None, fallback_status)
         raise ValueError(message)
 
+    def _extract_http_error_message(self, prefix: str, exc: httpx.HTTPError) -> str:
+        if isinstance(exc, httpx.HTTPStatusError):
+            try:
+                payload = exc.response.json()
+            except ValueError:
+                payload = None
+            detail = payload.get("message") if isinstance(payload, dict) else exc.response.text
+            if detail:
+                return f"{prefix}: {detail}"
+        return f"{prefix}: {exc}"
+
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise("FILLED", "Alpaca paper credentials are missing for broker execution")
@@ -94,7 +117,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as exc:
-            return self._fallback_or_raise("FILLED", f"Alpaca market order failed: {exc}")
+            return self._fallback_or_raise("FILLED", self._extract_http_error_message("Alpaca market order failed", exc))
         return BrokerOrderResult(data.get("id"), str(data.get("status", "accepted")).upper())
 
     def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
@@ -114,7 +137,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as exc:
-            return self._fallback_or_raise("ACTIVE", f"Alpaca stop order failed: {exc}")
+            return self._fallback_or_raise("ACTIVE", self._extract_http_error_message("Alpaca stop order failed", exc))
         return BrokerOrderResult(data.get("id"), str(data.get("status", "new")).upper())
 
     def place_limit_order(self, symbol: str, qty: int, limit_price: float) -> BrokerOrderResult:
@@ -134,7 +157,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as exc:
-            return self._fallback_or_raise("FILLED", f"Alpaca limit order failed: {exc}")
+            return self._fallback_or_raise("FILLED", self._extract_http_error_message("Alpaca limit order failed", exc))
         return BrokerOrderResult(data.get("id"), str(data.get("status", "accepted")).upper())
 
     def place_trailing_stop(
@@ -159,7 +182,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as exc:
-            return self._fallback_or_raise("ACTIVE", f"Alpaca trailing stop failed: {exc}")
+            return self._fallback_or_raise("ACTIVE", self._extract_http_error_message("Alpaca trailing stop failed", exc))
         return BrokerOrderResult(data.get("id"), str(data.get("status", "new")).upper())
 
     def close_position(self, symbol: str) -> BrokerOrderResult:
@@ -171,5 +194,50 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as exc:
-            return self._fallback_or_raise("FILLED", f"Alpaca close position failed: {exc}")
+            return self._fallback_or_raise("FILLED", self._extract_http_error_message("Alpaca close position failed", exc))
         return BrokerOrderResult(data.get("id"), "FILLED")
+
+    def wait_for_position(self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0) -> int:
+        if not self.settings.has_alpaca_credentials:
+            if self.settings.allow_controller_mock:
+                return min_qty
+            raise ValueError("Alpaca paper credentials are missing for broker position checks")
+        import time
+
+        end_time = time.monotonic() + timeout_seconds
+        last_error: str | None = None
+        while time.monotonic() < end_time:
+            try:
+                with self._client() as client:
+                    response = client.get(f"/v2/positions/{symbol}")
+                    if response.status_code == 404:
+                        time.sleep(0.5)
+                        continue
+                    response.raise_for_status()
+                    data = response.json()
+                qty = int(float(data.get("qty", 0)))
+                if qty >= min_qty:
+                    return qty
+                last_error = f"Broker position quantity {qty} is below expected {min_qty}"
+            except httpx.HTTPError as exc:
+                last_error = self._extract_http_error_message("Alpaca position lookup failed", exc)
+            time.sleep(0.5)
+        raise ValueError(last_error or f"Broker position for {symbol} is not available yet")
+
+    def cancel_order(self, broker_order_id: str) -> None:
+        if not broker_order_id:
+            return
+        if not self.settings.has_alpaca_credentials:
+            if self.settings.allow_controller_mock:
+                return
+            raise ValueError("Alpaca paper credentials are missing for broker order cancellation")
+        try:
+            with self._client() as client:
+                response = client.delete(f"/v2/orders/{broker_order_id}")
+                if response.status_code in {404, 422}:
+                    return
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            if self.settings.allow_controller_mock:
+                return
+            raise ValueError(self._extract_http_error_message("Alpaca order cancellation failed", exc)) from exc

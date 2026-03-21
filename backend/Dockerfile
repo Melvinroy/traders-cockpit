@@ -15,7 +15,7 @@ COPY backend/app /app/app
 RUN pip install --no-cache-dir -e .[dev]
 
 COPY scripts/deploy/backend-start.sh /app/backend-start.sh
-RUN chmod +x /app/backend-start.sh
+RUN sed -i 's/\r$//' /app/backend-start.sh && chmod +x /app/backend-start.sh
 
 EXPOSE 8000
 

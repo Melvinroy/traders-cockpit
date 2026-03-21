@@ -9,44 +9,74 @@ services:
       - "${POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U traders_cockpit -d traders_cockpit"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   redis:
     image: redis:7
     ports:
       - "${REDIS_HOST_PORT:-56379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   backend:
-    image: python:3.13-slim
-    working_dir: /app/backend
-    command: >
-      sh -c "pip install -e .[dev] &&
-      alembic upgrade head &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
+      APP_ENV: ${APP_ENV:-development}
+      AUTH_REQUIRE_LOGIN: ${AUTH_REQUIRE_LOGIN:-true}
+      AUTH_ADMIN_USERNAME: ${AUTH_ADMIN_USERNAME:-admin}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:-admin123!}
+      AUTH_TRADER_USERNAME: ${AUTH_TRADER_USERNAME:-trader}
+      AUTH_TRADER_PASSWORD: ${AUTH_TRADER_PASSWORD:-trader123!}
       DATABASE_URL: postgresql://traders_cockpit:traders_cockpit@postgres:5432/traders_cockpit
       REDIS_URL: redis://redis:6379/0
-      NEXT_PUBLIC_API_BASE_URL: http://backend:8000
+      CORS_ORIGINS: http://127.0.0.1:${FRONTEND_HOST_PORT:-3000},http://localhost:${FRONTEND_HOST_PORT:-3000}
+      REDIS_CHANNEL_PREFIX: ${REDIS_CHANNEL_PREFIX:-traders-cockpit}
+      BROKER_MODE: ${BROKER_MODE:-alpaca_paper}
+      ALLOW_LIVE_TRADING: ${ALLOW_LIVE_TRADING:-false}
+      ALLOW_CONTROLLER_MOCK: ${ALLOW_CONTROLLER_MOCK:-false}
+      ALPACA_API_KEY_ID: ${ALPACA_API_KEY_ID:-}
+      ALPACA_API_SECRET_KEY: ${ALPACA_API_SECRET_KEY:-}
+      ALPACA_API_BASE_URL: ${ALPACA_API_BASE_URL:-https://paper-api.alpaca.markets}
+      ALPACA_DATA_BASE_URL: ${ALPACA_DATA_BASE_URL:-https://data.alpaca.markets}
+      DEFAULT_ACCOUNT_EQUITY: ${DEFAULT_ACCOUNT_EQUITY:-100000}
+      DEFAULT_RISK_PCT: ${DEFAULT_RISK_PCT:-1}
+      MAX_POSITION_NOTIONAL_PCT: ${MAX_POSITION_NOTIONAL_PCT:-100}
+      DAILY_LOSS_LIMIT_PCT: ${DAILY_LOSS_LIMIT_PCT:-2}
+      MAX_OPEN_POSITIONS: ${MAX_OPEN_POSITIONS:-6}
     ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
+      - "${BACKEND_HOST_PORT:-8000}:8000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
   frontend:
-    image: node:22
-    working_dir: /app/frontend
-    command: sh -c "npm install && npm run dev"
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8000
-      NEXT_PUBLIC_WS_URL: ws://127.0.0.1:8000/ws/cockpit
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:${BACKEND_HOST_PORT:-8000}
+      NEXT_PUBLIC_WS_URL: ws://127.0.0.1:${BACKEND_HOST_PORT:-8000}/ws/cockpit
     ports:
-      - "3000:3000"
-    volumes:
-      - .:/app
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:
