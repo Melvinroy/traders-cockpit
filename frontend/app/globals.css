@@ -901,6 +901,19 @@ select {
   color: var(--green);
 }
 
+.plan-status-modified {
+  color: var(--cyan);
+}
+
+.plan-status-canceled {
+  color: var(--text3);
+  text-decoration: line-through;
+}
+
+.plan-status-preview {
+  color: var(--amber);
+}
+
 .protect-actions {
   display: flex;
   gap: 8px;

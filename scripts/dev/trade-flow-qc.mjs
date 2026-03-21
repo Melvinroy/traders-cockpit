@@ -45,6 +45,24 @@ async function clearActivityLog() {
   });
 }
 
+async function expectStopModeRowCounts(page, expected, screenshotName) {
+  const buttons = page.locator(".protect-controls .tranche-count-btn");
+  const planRows = page.locator(".stop-plan-content .plan-line");
+  for (const [index, key] of ["s1", "s1s2", "s1s2s3"].entries()) {
+    await buttons.nth(index).click();
+    let count = await planRows.count();
+    const deadline = Date.now() + 3000;
+    while (count !== expected[key] && Date.now() < deadline) {
+      await page.waitForTimeout(100);
+      count = await planRows.count();
+    }
+    if (count !== expected[key]) {
+      throw new Error(`Stop mode ${key} expected ${expected[key]} rows but found ${count}.`);
+    }
+  }
+  await page.screenshot({ path: path.join(outputDir, screenshotName), fullPage: true });
+}
+
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
 
@@ -65,6 +83,7 @@ try {
 
   await page.getByRole("button", { name: /\u2197 ENTER TRADE|ENTER TRADE/ }).click();
   await page.locator(".state-display").filter({ hasText: "TRADE ENTERED" }).waitFor({ timeout: 15000 });
+  await expectStopModeRowCounts(page, { s1: 1, s1s2: 2, s1s2s3: 3 }, "baseline-stop-mode-preview.png");
   await page.screenshot({ path: path.join(outputDir, "baseline-trade-entered.png"), fullPage: true });
 
   const executeButtons = page.getByRole("button", { name: "EXECUTE" });
@@ -74,6 +93,7 @@ try {
 
   await executeButtons.nth(1).click();
   await page.locator(".state-display").filter({ hasText: /P2 DONE|RUNNER ONLY|CLOSED/ }).waitFor({ timeout: 15000 });
+  await expectStopModeRowCounts(page, { s1: 1, s1s2: 2, s1s2s3: 3 }, "baseline-stop-mode-active.png");
   await page.screenshot({ path: path.join(outputDir, "baseline-profit-flow.png"), fullPage: true });
 } finally {
   await browser.close();

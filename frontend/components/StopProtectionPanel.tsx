@@ -67,7 +67,13 @@ export function StopProtectionPanel(props: Props) {
           {!hasSetup ? null : rows.map((row, index) => {
             const mode = stopModes[index] ?? { mode: "stop", pct: 100 };
             const isBreakeven = mode.mode === "be";
-            const statusClass = row.status === "ACTIVE" || row.status === "MODIFIED" ? "plan-status-live" : "";
+            const statusClass = row.status === "ACTIVE"
+              ? "plan-status-live"
+              : row.status === "MODIFIED"
+                ? "plan-status-modified"
+                : row.status === "CANCELED"
+                  ? "plan-status-canceled"
+                  : "plan-status-preview";
             return (
               <div className="plan-line" key={row.label}>
                 <span className="plan-line-label">{row.label}</span>
