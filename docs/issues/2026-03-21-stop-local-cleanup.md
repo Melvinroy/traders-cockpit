@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-21
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Issue: Stop Local Cleanup Reliability
 
 ## Summary
@@ -14,3 +19,4 @@
 
 - Repeated `start-local -> stop-local -> start-local` cycles do not leave stale listeners.
 - `run-qc.ps1 -StartStack` can run twice in a row without manual port cleanup.
+

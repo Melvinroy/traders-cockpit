@@ -49,9 +49,20 @@ See:
 
 ### Recommended Local Bootstrap
 
+For deterministic development and tests:
+
 ```powershell
 .\scripts\dev\start-local.ps1
 ```
+
+For real local Alpaca paper trading:
+
+```powershell
+Copy-Item .env.personal-paper.example .env.personal-paper.local
+.\scripts\dev\start-local-personal-paper.ps1
+```
+
+`start-local-personal-paper.ps1` fails fast unless Alpaca paper credentials are present, `BROKER_MODE=alpaca_paper`, and live trading remains disabled.
 
 This starts:
 
@@ -70,6 +81,13 @@ To run the full local QC path, including browser smoke:
 
 ```powershell
 .\scripts\dev\run-qc.ps1 -StartStack
+```
+
+To validate and QC the personal-paper profile explicitly:
+
+```powershell
+.\scripts\dev\check-local-paper-readiness.ps1 -EnvFile ".env.personal-paper.local"
+.\scripts\dev\run-qc.ps1 -StartStack -PersonalPaper -EnvFile ".env.personal-paper.local"
 ```
 
 ### Docker
@@ -126,11 +144,13 @@ Copy `.env.example` to `.env` at the repo root and fill only the values you need
 Important defaults:
 
 - paper mode first
+- local personal-paper mode is the primary runtime for real usage; hosted deploys come after local validation
 - live mode disabled unless explicitly allowed
 - local session auth enabled by default
 - staged/hosted deployments should use `AUTH_COOKIE_SAMESITE=none` and `AUTH_COOKIE_SECURE=true` so the hosted frontend can authenticate against a separate backend origin
 - auth sessions are stored separately from trading data in `AUTH_DB_PATH`, following the TradeCtrl session-store pattern without sharing the same database
 - broker and market-data adapters can fall back to deterministic local data for development and tests
+- in local personal-paper mode, the latest quote and execution path use Alpaca when credentials are present; derived technical fields remain fallback-backed for now
 - PostgreSQL on `55432` and Redis on `56379` are the default local persistence endpoints
 - SQLite is fallback-only and should be enabled explicitly when needed
 - hosted Postgres URLs that begin with `postgresql://` are normalized by the backend to `postgresql+psycopg://` so Render-style connection strings work with the installed driver
@@ -148,6 +168,7 @@ Additional realtime/safety envs:
 - Orders use parent-child hierarchy rooted on the entry order.
 - Realtime fanout uses Redis when available and falls back to single-process websocket broadcast in local-only scenarios.
 - Live trading is scaffolded but disabled by default.
+- Setup responses now expose quote/technical/execution provider metadata so the UI can distinguish real Alpaca paper quotes from fallback-backed derived fields.
 - TradeCtrl reuse is intentional for config/auth/safety patterns, while trading DB state stays isolated to `traders-cockpit`.
 
 ## Realtime Contract
@@ -192,6 +213,7 @@ Required state artifacts:
 3. Open a PR back into `codex/integration-app`.
 4. Run the repo QC path before asking for review.
 5. Promote only through a separate PR from `codex/integration-app` into `main`.
+6. After promotion, close the linked issue doc and delete merged feature branches.
 
 For release preparation, use:
 

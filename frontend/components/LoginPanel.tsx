@@ -8,7 +8,7 @@ type Props = {
 
 export function LoginPanel({ error, busy, onSubmit }: Props) {
   const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123!");
+  const [password, setPassword] = useState("");
 
   return (
     <main className="login-screen">

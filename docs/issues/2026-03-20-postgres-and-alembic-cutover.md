@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-20
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # PostgreSQL And Alembic Migration Cutover
 
 GitHub issue: #6
@@ -22,3 +27,4 @@ This makes local and staging behavior match the intended production shape, reduc
 - [ ] root env example points to the repo-owned Postgres and Redis ports
 - [ ] backend config defaults to PostgreSQL outside explicit fallback usage
 - [ ] local bootstrap and docs use Alembic before app startup
+

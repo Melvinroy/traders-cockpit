@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-21
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Issue: TradeCtrl Reuse Alignment
 
 ## Summary
@@ -23,3 +28,4 @@ Align `traders-cockpit` with the mature `TradeCtrl` patterns where reuse is help
 - Sharing the same Postgres database with `TradeCtrl`
 - Replacing the existing trading data model with `TradeCtrl` tables
 - Full production auth policy enforcement across every API route in this tranche
+

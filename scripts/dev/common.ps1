@@ -2,6 +2,113 @@ function Get-RepoRoot {
   return Resolve-Path (Join-Path $PSScriptRoot "..\\..")
 }
 
+function Read-EnvFileValues {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  $values = @{}
+  if (-not (Test-Path $Path)) {
+    return $values
+  }
+
+  foreach ($rawLine in Get-Content $Path) {
+    $line = $rawLine.Trim()
+    if (-not $line -or $line.StartsWith("#")) {
+      continue
+    }
+    if ($line.ToLower().StartsWith("export ")) {
+      $line = $line.Substring(7).Trim()
+    }
+    $separatorIndex = $line.IndexOf("=")
+    if ($separatorIndex -lt 1) {
+      continue
+    }
+    $key = $line.Substring(0, $separatorIndex).Trim()
+    $value = $line.Substring($separatorIndex + 1).Trim().Trim("'").Trim('"')
+    if ($key) {
+      $values[$key] = $value
+    }
+  }
+
+  return $values
+}
+
+function Merge-EnvValues {
+  param(
+    [hashtable]$Base = @{},
+    [hashtable]$Override = @{}
+  )
+
+  $merged = @{}
+  foreach ($entry in $Base.GetEnumerator()) {
+    $merged[$entry.Key] = $entry.Value
+  }
+  foreach ($entry in $Override.GetEnumerator()) {
+    $merged[$entry.Key] = $entry.Value
+  }
+  return $merged
+}
+
+function Get-LocalProfileEnv {
+  param(
+    [Parameter(Mandatory = $true)][string]$RepoRoot,
+    [string]$EnvFile,
+    [switch]$PersonalPaper
+  )
+
+  $envValues = @{}
+  $candidateFiles = @()
+  if ($EnvFile) {
+    $candidateFiles += $EnvFile
+  } elseif ($PersonalPaper) {
+    $candidateFiles += @(
+      (Join-Path $RepoRoot ".env.personal-paper.local"),
+      (Join-Path $RepoRoot ".env.personal-paper"),
+      (Join-Path $RepoRoot "backend\.env.personal-paper.local"),
+      (Join-Path $RepoRoot "backend\.env.personal-paper")
+    )
+  }
+
+  foreach ($candidate in $candidateFiles) {
+    $resolved = $candidate
+    if (-not [System.IO.Path]::IsPathRooted($resolved)) {
+      $resolved = Join-Path $RepoRoot $candidate
+    }
+    $envValues = Merge-EnvValues -Base $envValues -Override (Read-EnvFileValues -Path $resolved)
+  }
+
+  return $envValues
+}
+
+function Get-ResolvedValue {
+  param(
+    [hashtable]$EnvValues,
+    [Parameter(Mandatory = $true)][string]$Key,
+    [string]$Default = ""
+  )
+
+  if ($EnvValues.ContainsKey($Key) -and $null -ne $EnvValues[$Key] -and "$($EnvValues[$Key])".Trim()) {
+    return "$($EnvValues[$Key])".Trim()
+  }
+  if (Test-Path "Env:$Key") {
+    $value = (Get-Item "Env:$Key").Value
+    if ($null -ne $value -and "$value".Trim()) {
+      return "$value".Trim()
+    }
+  }
+  return $Default
+}
+
+function Convert-EnvMapToCmdSetStatements {
+  param([Parameter(Mandatory = $true)][hashtable]$EnvValues)
+
+  $statements = @()
+  foreach ($entry in $EnvValues.GetEnumerator()) {
+    $escapedValue = "$($entry.Value)".Replace('"', '\"')
+    $statements += "set ""$($entry.Key)=$escapedValue"""
+  }
+  return $statements
+}
+
 function Get-PortListener {
   param([Parameter(Mandatory = $true)][int]$Port)
   return Get-PortListeners -Port $Port | Select-Object -First 1

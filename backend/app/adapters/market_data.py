@@ -46,6 +46,12 @@ MOCK_MARKET_DATA: dict[str, dict[str, float]] = {
 class SetupMarketData:
     symbol: str
     provider: str
+    provider_state: str
+    quote_provider: str
+    technicals_provider: str
+    quote_is_real: bool
+    technicals_are_fallback: bool
+    fallback_reason: str | None
     quote_timestamp: datetime | None
     bid: float
     ask: float
@@ -63,11 +69,17 @@ class SetupMarketData:
 
 
 class MockMarketDataAdapter:
-    def get_setup_data(self, symbol: str) -> SetupMarketData:
+    def get_setup_data(self, symbol: str, fallback_reason: str | None = None) -> SetupMarketData:
         payload = MOCK_MARKET_DATA.get(symbol.upper(), MOCK_MARKET_DATA["AAPL"])
         return SetupMarketData(
             symbol=symbol.upper(),
             provider="mock",
+            provider_state="fallback_all",
+            quote_provider="mock",
+            technicals_provider="mock",
+            quote_is_real=False,
+            technicals_are_fallback=True,
+            fallback_reason=fallback_reason,
             quote_timestamp=datetime.now(UTC),
             **payload,
         )
@@ -80,7 +92,7 @@ class AlpacaPolygonMarketDataAdapter:
 
     def get_setup_data(self, symbol: str) -> SetupMarketData:
         if not self.settings.has_alpaca_credentials:
-            return self.fallback.get_setup_data(symbol)
+            return self.fallback.get_setup_data(symbol, fallback_reason="alpaca_credentials_missing")
         try:
             with httpx.Client(
                 base_url=self.settings.alpaca_data_base_url,
@@ -99,6 +111,12 @@ class AlpacaPolygonMarketDataAdapter:
             return SetupMarketData(
                 symbol=symbol.upper(),
                 provider="alpaca_quote",
+                provider_state="real_quote_fallback_technicals",
+                quote_provider="alpaca",
+                technicals_provider="mock",
+                quote_is_real=True,
+                technicals_are_fallback=True,
+                fallback_reason="technicals_fallback_only",
                 quote_timestamp=datetime.now(UTC),
                 bid=bid,
                 ask=ask,
@@ -115,4 +133,4 @@ class AlpacaPolygonMarketDataAdapter:
                 days_to_cover=fallback.days_to_cover,
             )
         except Exception:
-            return self.fallback.get_setup_data(symbol)
+            return self.fallback.get_setup_data(symbol, fallback_reason="alpaca_quote_unavailable")

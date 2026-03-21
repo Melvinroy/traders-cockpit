@@ -20,6 +20,9 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
   const rvolText = Number.isFinite(rvol) ? `${rvol?.toFixed(1)}x` : "--";
   const extFrom10Text = Number.isFinite(extFrom10Ma) ? `${extFrom10Ma?.toFixed(2)}%` : "--";
   const daysToCoverText = Number.isFinite(daysToCover) ? `${daysToCover?.toFixed(1)}` : "--";
+  const providerStateLabel = setup
+    ? `${setup.quoteIsReal ? "Real quote" : "Fallback quote"} via ${setup.quoteProvider} · technicals via ${setup.technicalsProvider} · execution ${setup.executionProvider}`
+    : "";
   return (
     <div className="panel setup-panel">
       <div className="panel-header">
@@ -41,6 +44,11 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
               <div className="kv-row"><span className="kv-label">Bid</span><span className="kv-val">{fp(setup.bid)}</span></div>
               <div className="kv-row"><span className="kv-label">Ask</span><span className="kv-val">{fp(setup.ask)}</span></div>
               <div className="kv-row"><span className="kv-label">Suggested Entry</span><span className="kv-val cyan">{fp(setup.entry)}</span></div>
+              <div className="provider-note">
+                {providerStateLabel}
+                {setup.technicalsAreFallback ? " · derived fields remain fallback-backed locally" : ""}
+              </div>
+              {setup.fallbackReason ? <div className="provider-subnote">Fallback reason: {setup.fallbackReason}</div> : null}
             </div>
             <div className="kv-group">
               <div className="kv-group-label">Stop Levels</div>

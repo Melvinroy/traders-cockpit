@@ -45,6 +45,7 @@ export function Cockpit() {
   const [trancheModes, setTrancheModes] = useState<TrancheMode[]>(DEFAULT_TRANCHE_MODES);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
   const activeSymbolRef = useRef("");
   const setupLoadedRef = useRef(false);
   const initialAutoloadRef = useRef(false);
@@ -192,29 +193,62 @@ export function Cockpit() {
   useEffect(() => {
     if (authRequired) return;
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:8010/ws/cockpit";
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-    ws.onopen = () => {
-      if (activeSymbolRef.current) {
-        ws.send(JSON.stringify({ action: "subscribe_price", symbol: activeSymbolRef.current }));
-      }
-    };
-    ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as Record<string, unknown>;
-      if ((payload.type === "price" || payload.type === "price_update") && typeof payload.symbol === "string") {
-        setPositions((current) =>
-          current.map((position) =>
-            position.symbol === payload.symbol
-              ? { ...position, livePrice: Number(payload.last ?? position.livePrice) }
-              : position
-          )
-        );
-      }
-      if (payload.type === "position_update" || payload.type === "order_update" || payload.type === "log_update") {
+    let disposed = false;
+    let reconnectDelay = 1000;
+
+    const connect = () => {
+      if (disposed) return;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      ws.onopen = () => {
+        reconnectDelay = 1000;
+        setRuntimeError(null);
+        if (activeSymbolRef.current) {
+          ws.send(JSON.stringify({ action: "subscribe_price", symbol: activeSymbolRef.current }));
+        }
         void hydrate({ autoSelectFirst: Boolean(activeSymbolRef.current) });
-      }
+      };
+      ws.onmessage = (event) => {
+        const payload = JSON.parse(event.data) as Record<string, unknown>;
+        if ((payload.type === "price" || payload.type === "price_update") && typeof payload.symbol === "string") {
+          setPositions((current) =>
+            current.map((position) =>
+              position.symbol === payload.symbol
+                ? { ...position, livePrice: Number(payload.last ?? position.livePrice) }
+                : position
+            )
+          );
+        }
+        if (payload.type === "position_update" || payload.type === "order_update" || payload.type === "log_update") {
+          void hydrate({ autoSelectFirst: Boolean(activeSymbolRef.current) });
+        }
+      };
+      ws.onerror = () => {
+        ws.close();
+      };
+      ws.onclose = () => {
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
+        if (disposed) return;
+        setRuntimeError("Realtime connection lost. Reconnecting...");
+        reconnectTimerRef.current = window.setTimeout(() => {
+          reconnectDelay = Math.min(reconnectDelay * 2, 5000);
+          connect();
+        }, reconnectDelay);
+      };
     };
-    return () => ws.close();
+
+    connect();
+    return () => {
+      disposed = true;
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
   }, [authRequired, hydrate]);
 
   const loadSetup = useCallback(async () => {

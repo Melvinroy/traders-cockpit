@@ -72,6 +72,12 @@ def test_setup_endpoint_returns_contract() -> None:
     data = response.json()
     assert data["symbol"] == "AAPL"
     assert data["provider"] in {"mock", "alpaca_quote"}
+    assert data["providerState"]
+    assert data["quoteProvider"]
+    assert data["technicalsProvider"]
+    assert data["executionProvider"] == "paper"
+    assert isinstance(data["quoteIsReal"], bool)
+    assert isinstance(data["technicalsAreFallback"], bool)
     assert data["entryBasis"] == "bid_ask_midpoint"
     assert data["entry"] > data["finalStop"]
     assert data["shares"] > 0
@@ -87,6 +93,17 @@ def test_postgres_urls_normalize_to_psycopg_driver() -> None:
         == "postgresql+psycopg://user:pass@host:5432/dbname"
     )
     assert _normalize_database_url("sqlite:///./data/test.db") == "sqlite:///./data/test.db"
+
+
+def test_local_personal_paper_ready_requires_real_alpaca_creds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BROKER_MODE", "alpaca_paper")
+    monkeypatch.setenv("ALLOW_LIVE_TRADING", "false")
+    monkeypatch.setenv("ALPACA_API_KEY_ID", "paper-key")
+    monkeypatch.setenv("ALPACA_API_SECRET_KEY", "paper-secret")
+    assert Settings.from_env().local_personal_paper_ready is True
+
+    monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
+    assert Settings.from_env().local_personal_paper_ready is False
 
 
 def test_login_creates_session_and_me_resolves_user() -> None:

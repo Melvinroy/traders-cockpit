@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-21
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Issue: Auth Enforcement And Login UX
 
 ## Summary
@@ -17,3 +22,4 @@ Harden sensitive API routes behind session auth and add a frontend login/logout 
 - Login produces an opaque session cookie and `/api/auth/me` resolves the current user.
 - Frontend displays a login panel when no valid session exists.
 - Browser QC still passes using the login flow.
+

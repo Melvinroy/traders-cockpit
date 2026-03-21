@@ -1,5 +1,11 @@
 # Title
 
+> Status: Proposed
+> Branch: `codex/<fill-me>`
+> Opened: YYYY-MM-DD
+> Closed: -
+> Closing Commit: -
+
 ## Problem
 
 TODO

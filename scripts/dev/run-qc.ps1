@@ -4,7 +4,9 @@ param(
   [int]$FrontendProdPort = 3110,
   [int]$BackendPort = 8010,
   [int]$PostgresPort = 55432,
-  [int]$RedisPort = 56379
+  [int]$RedisPort = 56379,
+  [switch]$PersonalPaper,
+  [string]$EnvFile
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +20,9 @@ $frontendErr = Join-Path $repoRoot "frontend.err.log"
 $frontendProdOut = Join-Path $repoRoot "frontend.prod.out.log"
 $frontendProdErr = Join-Path $repoRoot "frontend.prod.err.log"
 $playwrightOutputDir = Join-Path $frontendDir "output\\playwright"
+$profileEnv = Get-LocalProfileEnv -RepoRoot $repoRoot -EnvFile $EnvFile -PersonalPaper:$PersonalPaper
+$qcAuthUsername = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_USERNAME" -Default "admin"
+$qcAuthPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "admin123!"
 
 function Start-FrontendDev {
   param([int]$Port)
@@ -83,7 +88,13 @@ if ($StartStack -or $null -eq (Get-PortListener -Port $FrontendPort) -or $null -
     -FrontendProdPort $FrontendProdPort `
     -BackendPort $BackendPort `
     -PostgresPort $PostgresPort `
-    -RedisPort $RedisPort
+    -RedisPort $RedisPort `
+    -PersonalPaper:$PersonalPaper `
+    -EnvFile $EnvFile
+}
+
+if ($PersonalPaper) {
+  & (Join-Path $PSScriptRoot "check-local-paper-readiness.ps1") -EnvFile $EnvFile -Quiet
 }
 
 Push-Location $backendDir
@@ -95,6 +106,8 @@ try {
 
 Push-Location $frontendDir
 try {
+  $env:QC_AUTH_USERNAME = $qcAuthUsername
+  $env:QC_AUTH_PASSWORD = $qcAuthPassword
   npm run lint
   npm run typecheck
   npm run test
@@ -132,6 +145,8 @@ try {
   Remove-Item Env:BACKEND_URL -ErrorAction SilentlyContinue
   Remove-Item Env:NEXT_PUBLIC_API_BASE_URL -ErrorAction SilentlyContinue
   Remove-Item Env:NEXT_PUBLIC_WS_URL -ErrorAction SilentlyContinue
+  Remove-Item Env:QC_AUTH_USERNAME -ErrorAction SilentlyContinue
+  Remove-Item Env:QC_AUTH_PASSWORD -ErrorAction SilentlyContinue
   Pop-Location
 }
 

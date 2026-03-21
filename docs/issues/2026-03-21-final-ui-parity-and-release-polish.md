@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-21
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Issue: Final UI Parity And Release Polish
 
 ## Goal
@@ -17,3 +22,4 @@ Close the last remaining gap between the current cockpit UI and the original `UI
 - the current Next.js UI is visually and behaviorally as close as practical to `UI.html`
 - all five browser baseline screenshots remain green after the parity pass
 - no runtime, lint, type, or backend regressions are introduced
+

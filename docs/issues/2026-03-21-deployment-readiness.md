@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-21
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Deployment Readiness
 
 ## Goal
@@ -16,3 +21,4 @@ Prepare `traders-cockpit` for a real hosted staging/preview setup instead of loc
   - Postgres and Redis as managed services
 - Docker builds exist for frontend and backend.
 - Hosted env variables are documented and can be validated locally before deployment.
+
