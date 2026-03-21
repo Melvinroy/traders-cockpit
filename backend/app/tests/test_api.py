@@ -101,6 +101,51 @@ def test_trade_lifecycle() -> None:
     )
 
 
+def test_three_stop_mode_defaults_to_33_33_34_when_pct_is_blank() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+        },
+    )
+    assert enter.status_code == 200
+
+    stops = client.post(
+        "/api/trade/stops",
+        json={
+            "symbol": "AAPL",
+            "stopMode": 3,
+            "stopModes": [
+                {"mode": "stop", "pct": None},
+                {"mode": "stop", "pct": None},
+                {"mode": "stop", "pct": None},
+            ],
+        },
+    )
+    assert stops.status_code == 200
+    protected = stops.json()
+    stop_orders = [order for order in protected["orders"] if order["type"] == "STOP"]
+    assert len(stop_orders) == 3
+
+    stop_range = round(setup["entry"] - setup["finalStop"], 2)
+    expected_prices = [
+        round(setup["entry"] - stop_range * 0.33, 2),
+        round(setup["entry"] - stop_range * 0.33, 2),
+        round(setup["entry"] - stop_range * 0.34, 2),
+    ]
+    assert [order["price"] for order in stop_orders] == expected_prices
+
+
 def test_account_update() -> None:
     update = client.put("/api/account/settings", json={"equity": 30000, "risk_pct": 1.5, "mode": "paper"})
     assert update.status_code == 200
