@@ -84,10 +84,11 @@ export function stopPlanRows(
   orders: OrderView[]
 ): Array<{ label: string; qty: number; price: number; pct: number; mode: StopMode["mode"]; status: string }> {
   if (!setup) return [];
+  const modeCount = stopMode || 3;
   const stopOrders = orders
     .filter((order) => order.type === "STOP")
     .sort((left, right) => Number(left.tranche.replace("S", "")) - Number(right.tranche.replace("S", "")));
-  if (stopOrders.length > 0) {
+  if (stopOrders.length > 0 && stopOrders.length === modeCount) {
     return stopOrders.map((order, index) => {
       const config = stopModes[index] ?? { mode: "stop", pct: null };
       const autoPct = index === stopOrders.length - 1
@@ -103,7 +104,6 @@ export function stopPlanRows(
       };
     });
   }
-  const modeCount = stopMode || 3;
   const previewTranches = tranches.length
     ? tranches
     : splitShares(setup.shares, modeCount).map((qty, index) => ({
