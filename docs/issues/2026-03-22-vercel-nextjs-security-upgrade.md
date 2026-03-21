@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-22
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Issue: Vercel Next.js Security Upgrade
 
 ## Summary
@@ -15,3 +20,4 @@ Vercel preview deployment for the `frontend/` app is blocked because the repo pi
 - `npm run test`
 - `npm run build`
 - Vercel preview deployment succeeds against the hosted Render backend.
+

@@ -8,6 +8,8 @@ const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8010";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..", "..");
 const outputDir = path.join(repoRoot, "frontend", "output", "playwright");
+const authUsername = process.env.QC_AUTH_USERNAME || "admin";
+const authPassword = process.env.QC_AUTH_PASSWORD || "admin123!";
 const require = createRequire(import.meta.url);
 const playwrightEntry = require.resolve("playwright", {
   paths: [repoRoot, path.join(repoRoot, "frontend")]
@@ -27,7 +29,7 @@ async function loginBackend() {
   const response = await fetch(`${backendUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "admin", password: "admin123!" })
+    body: JSON.stringify({ username: authUsername, password: authPassword })
   });
   if (!response.ok) {
     throw new Error(`Unable to authenticate against ${backendUrl}`);
@@ -69,8 +71,8 @@ async function clearActivityLog() {
 async function loginUiIfNeeded(page) {
   const loginTitle = page.getByText("Session Required");
   if ((await loginTitle.count()) === 0) return;
-  await page.getByLabel("Username").fill("admin");
-  await page.getByLabel("Password").fill("admin123!");
+  await page.getByLabel("Username").fill(authUsername);
+  await page.getByLabel("Password").fill(authPassword);
   await page.getByRole("button", { name: "SIGN IN" }).click();
   await page.getByText("Setup Parameters").waitFor({ timeout: 15000 });
 }

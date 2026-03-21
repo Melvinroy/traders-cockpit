@@ -466,6 +466,13 @@ class CockpitService:
         return SetupResponse(
             symbol=market.symbol,
             provider=market.provider,
+            providerState=market.provider_state,
+            quoteProvider=market.quote_provider,
+            technicalsProvider=market.technicals_provider,
+            executionProvider=self.settings.broker_execution_provider,
+            quoteIsReal=market.quote_is_real,
+            technicalsAreFallback=market.technicals_are_fallback,
+            fallbackReason=market.fallback_reason,
             quoteTimestamp=market.quote_timestamp,
             entryBasis="bid_ask_midpoint",
             stopReferenceDefault="lod",

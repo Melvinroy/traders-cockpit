@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-20
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Local Dev Bootstrap Scripts
 
 GitHub issue: #4
@@ -22,3 +27,4 @@ This gives contributors one reliable path to boot the stack and one reliable pat
 - [ ] local stack starts with one documented script path
 - [ ] local QC runs with one documented script path
 - [ ] port conflicts are handled explicitly
+

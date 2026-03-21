@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-20
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Frontend Reliability And UI Fidelity Recovery
 
 GitHub issue: #8
@@ -22,3 +27,4 @@ This makes the frontend trustworthy in local QC and restores the actual product 
 - [ ] the frontend URL works after a clean QC run
 - [ ] Playwright verifies `LOAD SETUP` without browser/runtime errors
 - [ ] the rendered cockpit is materially aligned with `UI.html`
+

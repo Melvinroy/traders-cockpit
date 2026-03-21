@@ -40,6 +40,13 @@ export type OrderView = {
 export type SetupResponse = {
   symbol: string;
   provider: string;
+  providerState: string;
+  quoteProvider: string;
+  technicalsProvider: string;
+  executionProvider: string;
+  quoteIsReal: boolean;
+  technicalsAreFallback: boolean;
+  fallbackReason?: string | null;
   quoteTimestamp?: string | null;
   entryBasis: string;
   stopReferenceDefault: string;

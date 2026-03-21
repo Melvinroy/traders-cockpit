@@ -27,5 +27,9 @@ Use this checklist before opening or merging a promotion PR from `codex/integrat
 ## After merge to `main`
 
 - confirm the merge commit is present on `main`
+- update the linked `docs/issues/*.md` record to `Status: Closed`
+- record the closing promotion commit in that issue doc
+- delete merged feature branches now reachable from `main`
+- prune stale local and remote tracking refs if needed
 - tag the release if a versioned cut is needed
 - document any operational follow-up in `docs/handoffs/` or the merged PR

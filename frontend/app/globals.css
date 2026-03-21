@@ -565,6 +565,22 @@ select {
   border-bottom: 1px solid var(--border);
 }
 
+.provider-note,
+.provider-subnote {
+  margin-top: 6px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.provider-note {
+  color: var(--text2);
+}
+
+.provider-subnote {
+  color: var(--text3);
+}
+
 .kv-row {
   display: flex;
   justify-content: space-between;
