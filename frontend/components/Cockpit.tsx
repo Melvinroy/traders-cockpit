@@ -100,20 +100,23 @@ export function Cockpit() {
       api.getPositions(),
       api.getLogs()
     ]);
+    const openPositions = positionRows.filter((position) => ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase));
     setAccount(accountView);
     setPositions(positionRows);
     setLogs(logRows);
 
     if (activeSymbolRef.current) {
-      const active = positionRows.find((position) => position.symbol === activeSymbolRef.current);
+      const active = openPositions.find((position) => position.symbol === activeSymbolRef.current);
       if (active) {
         applyPositionState(active);
         return;
       }
+      activeSymbolRef.current = "";
+      setActiveSymbol("");
     }
 
-    if (autoSelectFirst && !activeSymbolRef.current && !setupLoadedRef.current && positionRows[0]) {
-      applyPositionState(positionRows[0]);
+    if (autoSelectFirst && !activeSymbolRef.current && !setupLoadedRef.current && openPositions[0]) {
+      applyPositionState(openPositions[0]);
     }
   }, [applyPositionState]);
 
@@ -162,7 +165,7 @@ export function Cockpit() {
     setEntryPrice(nextSetup.entry);
     setManualStop(nextSetup.finalStop);
     setActiveSymbol("");
-    setStopMode(0);
+    setStopMode(3);
     setStopModes(DEFAULT_STOP_MODES);
     subscribePrice(ticker);
     await hydrate({ autoSelectFirst: false });
@@ -172,13 +175,16 @@ export function Cockpit() {
   useEffect(() => {
     if (initialAutoloadRef.current) return;
     if (!account) return;
-    if (setup || positions.length > 0 || activeSymbolRef.current) {
+    const hasActivePosition = positions.some((position) =>
+      ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase)
+    );
+    if (setup || hasActivePosition || activeSymbolRef.current) {
       initialAutoloadRef.current = true;
       return;
     }
     initialAutoloadRef.current = true;
     void loadSetup();
-  }, [account, loadSetup, positions.length, setup]);
+  }, [account, loadSetup, positions, setup]);
 
   async function commitRiskPct(nextRiskPct: number) {
     if (!account) return;
@@ -279,7 +285,7 @@ export function Cockpit() {
           setupLoadedRef.current = false;
           setSetup(null);
           setActiveSymbol("");
-          setTicker("AAPL");
+          setTicker("");
           setEntryPrice(0);
           setManualStop(0);
           setStopMode(3);

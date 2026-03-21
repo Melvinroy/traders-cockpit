@@ -1,14 +1,16 @@
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 const frontendUrl = process.env.FRONTEND_URL || "http://127.0.0.1:3010";
 const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8010";
-const outputDir = path.resolve(process.cwd(), "output", "playwright");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, "..", "..");
+const outputDir = path.join(repoRoot, "frontend", "output", "playwright");
 const require = createRequire(import.meta.url);
 const playwrightEntry = require.resolve("playwright", {
-  paths: [process.cwd(), path.resolve(process.cwd(), "frontend")]
+  paths: [repoRoot, path.join(repoRoot, "frontend")]
 });
 const playwrightModule = await import(pathToFileURL(playwrightEntry).href);
 const { chromium } = playwrightModule.default ?? playwrightModule;
@@ -37,12 +39,19 @@ async function flattenOpenPositions() {
   }
 }
 
+async function clearActivityLog() {
+  await fetch(`${backendUrl}/api/activity-log`, {
+    method: "DELETE"
+  });
+}
+
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
 
 try {
   await fs.mkdir(outputDir, { recursive: true });
   await flattenOpenPositions();
+  await clearActivityLog();
 
   const response = await page.goto(frontendUrl, { waitUntil: "networkidle" });
   if (!response || response.status() >= 400) {

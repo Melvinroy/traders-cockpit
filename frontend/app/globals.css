@@ -764,13 +764,28 @@ select {
   box-shadow: 0 0 10px rgba(0, 208, 122, 0.5);
 }
 
-.stop-mode-label,
-.position-summary-header {
+.stop-ok-ready:hover:not(:disabled) {
+  background: #13e18a;
+  border-color: #13e18a;
+  box-shadow: 0 0 12px rgba(0, 208, 122, 0.65);
+}
+
+.stop-mode-label {
   overflow: hidden;
   text-align: right;
   color: var(--text2);
   font-family: "IBM Plex Mono", monospace;
   font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.position-summary-header {
+  overflow: hidden;
+  text-align: right;
+  color: var(--text2);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -794,6 +809,10 @@ select {
   color: var(--text3);
 }
 
+.stop-plan-title .section-hint {
+  font-size: 8px;
+}
+
 .stop-plan-content,
 .exit-plan-content {
   width: 100%;
@@ -803,9 +822,9 @@ select {
 .exit-plan-line {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-  padding: 5px 10px;
+  gap: 8px;
+  margin-bottom: 3px;
+  padding: 4px 8px;
   border: 1px solid var(--border2);
   border-radius: 3px;
   background: var(--bg2);
@@ -850,21 +869,21 @@ select {
 }
 
 .plan-price {
-  min-width: 54px;
+  min-width: 52px;
   color: var(--text1);
   font-size: 10px;
 }
 
 .plan-qty {
-  min-width: 48px;
+  min-width: 46px;
   color: var(--text1);
   font-size: 10px;
 }
 
 .plan-pct {
-  min-width: 52px;
+  min-width: 46px;
   color: var(--green);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   text-align: right;
 }
@@ -914,7 +933,7 @@ select {
 .manage-scroll {
   flex: 1;
   overflow: auto;
-  padding: 12px 14px;
+  padding: 10px 14px 12px;
 }
 
 .manage-section-label {
@@ -925,7 +944,7 @@ select {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .tranche-card {
@@ -943,7 +962,7 @@ select {
 .tranche-card.sold,
 .tranche-card.canceled {
   border-color: var(--border);
-  opacity: 0.4;
+  opacity: 0.5;
 }
 
 .tranche-label,
@@ -1003,7 +1022,7 @@ select {
 .tranche-status {
   display: flex;
   align-items: center;
-  margin-top: 6px;
+  margin-top: 5px;
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -1125,10 +1144,10 @@ select {
 }
 
 .order-subtext {
-  margin-top: 2px;
+  margin-top: 1px;
   color: var(--text3);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: 0.05em;
 }
 
@@ -1231,18 +1250,6 @@ select {
   line-height: 1.5;
 }
 
-.log-symbol-chip {
-  display: inline-flex;
-  margin-right: 6px;
-  padding: 0 4px;
-  border: 1px solid var(--border2);
-  border-radius: 2px;
-  color: var(--cyan);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-}
-
 .tag {
   display: inline-block;
   margin-right: 4px;
@@ -1305,7 +1312,10 @@ select {
 
 .op-live-badge {
   color: var(--green);
+  font-family: "IBM Plex Mono", monospace;
   font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }
 
 .op-card {
@@ -1427,10 +1437,14 @@ select {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 10px;
-  padding-top: 10px;
+  margin: 10px -10px -8px;
+  padding: 10px;
   border-top: 1px solid var(--border2);
   background: var(--bg3);
+}
+
+.op-expand .op-val {
+  color: var(--text1);
 }
 
 .op-tranche-pills {

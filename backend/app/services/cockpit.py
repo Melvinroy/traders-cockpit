@@ -88,14 +88,16 @@ class CockpitService:
             raise ValueError(self._live_disabled_reason(payload.mode) or "Live trading is disabled")
         account = db.scalar(select(AccountSettingsEntity))
         assert account is not None
+        previous = (account.equity, account.risk_pct, account.mode)
         account.equity = payload.equity
         account.buying_power = payload.equity * 4
         account.risk_pct = payload.risk_pct
         account.mode = payload.mode
         account.updated_at = utcnow()
         db.commit()
-        self._log(db, None, "sys", f"Account settings updated: equity {payload.equity:.2f}")
-        db.commit()
+        if previous != (payload.equity, payload.risk_pct, payload.mode):
+            self._log(db, None, "sys", f"Account settings updated: equity {payload.equity:.2f}")
+            db.commit()
         return self.get_account(db)
 
     def get_setup(self, db: Session, symbol: str) -> SetupResponse:
@@ -198,7 +200,8 @@ class CockpitService:
                 fill_price=payload.entry,
             )
         )
-        self._log(db, symbol, "exec", f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f}")
+        self._log(db, symbol, "exec", f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f} (MKT simulated)")
+        self._log(db, symbol, "sys", "Tranches: " + " \u00b7 ".join(f"T{i+1}={qty}sh" for i, qty in enumerate(qtys)))
         db.commit()
         view = self.get_position(db, symbol)
         await self._broadcast_position_bundle(db, view, pnl=0.0)
@@ -246,7 +249,14 @@ class CockpitService:
         position.stop_modes = [item.model_dump() for item in payload.stopModes]
         position.phase = "protected"
         position.updated_at = utcnow()
-        self._log(db, position.symbol, "warn", f"Stops applied in S{payload.stopMode} mode")
+        stop_lines: list[str] = []
+        for index, group in enumerate(self._stop_groups(current_tranches, payload.stopMode)):
+            config = payload.stopModes[index]
+            pct = 100.0 if config.pct is None else config.pct
+            qty = sum(item["qty"] for item in group)
+            price = position.entry_price if config.mode == "be" else group[0]["stop"]
+            stop_lines.append(f"S{index+1} {qty}sh @ {price:.2f} ({pct:.2f}%)")
+        self._log(db, position.symbol, "warn", f"\u2713 Stops applied \u2014 {' \u00b7 '.join(stop_lines)}")
         db.commit()
         view = self.get_position(db, position.symbol)
         await self._broadcast_position_bundle(db, view)
@@ -536,6 +546,7 @@ class CockpitService:
         open_positions = [row for row in self.get_positions(db) if row.phase != "closed"]
         if len(open_positions) >= self.settings.max_open_positions:
             raise ValueError("Max open positions reached")
+        self._cancel_stale_active_orders(db, symbol)
         active = db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.status.in_(["ACTIVE", "MODIFIED"]))).all()
         if active:
             raise ValueError("Duplicate active orders exist for this symbol")
@@ -559,11 +570,13 @@ class CockpitService:
             raise ValueError("Profit tranche configuration is incomplete")
 
     def _reject_duplicate_active_stops(self, db: Session, symbol: str) -> None:
+        self._cancel_stale_active_orders(db, symbol)
         active = db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.type == "STOP", OrderEntity.status.in_(["ACTIVE", "MODIFIED"]))).all()
         if active:
             raise ValueError("Active stop orders already exist for this symbol")
 
     def _reject_duplicate_active_order(self, db: Session, symbol: str, tranche_id: str, order_type: str) -> None:
+        self._cancel_stale_active_orders(db, symbol)
         active = db.scalars(
             select(OrderEntity).where(
                 OrderEntity.symbol == symbol,
@@ -573,6 +586,24 @@ class CockpitService:
         ).all()
         if any(tranche_id in (order.covered_tranches or []) or order.tranche_label == tranche_id for order in active):
             raise ValueError(f"Active {order_type} order already exists for {tranche_id}")
+
+    def _cancel_stale_active_orders(self, db: Session, symbol: str) -> None:
+        position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol))
+        if position is not None and position.phase != "closed" and any(
+            tranche["status"] == "active" for tranche in position.tranches
+        ):
+            return
+        stale_orders = db.scalars(
+            select(OrderEntity).where(
+                OrderEntity.symbol == symbol,
+                OrderEntity.status.in_(["ACTIVE", "MODIFIED"]),
+            )
+        ).all()
+        if not stale_orders:
+            return
+        for order in stale_orders:
+            order.status = "CANCELED"
+        db.flush()
 
     def _require_position(self, db: Session, symbol: str) -> PositionEntity:
         position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol.upper()))
@@ -652,7 +683,14 @@ class CockpitService:
         }
 
     def _next_order_id(self, db: Session) -> str:
-        persisted_max = db.scalar(select(func.max(OrderEntity.id))) or 0
+        persisted_max = 0
+        for order_id in db.scalars(select(OrderEntity.order_id)):
+            if not order_id.startswith("ORD-"):
+                continue
+            try:
+                persisted_max = max(persisted_max, int(order_id.split("-", 1)[1]))
+            except ValueError:
+                continue
         pending_max = 0
         for instance in db.new:
             if isinstance(instance, OrderEntity) and instance.order_id.startswith("ORD-"):
@@ -682,7 +720,11 @@ class CockpitService:
 
     def _position_view(self, db: Session, row: PositionEntity) -> PositionView:
         orders = self.get_orders(db, row.symbol)
-        active_stops = [order for order in orders if order.type == "STOP" and order.status in {"ACTIVE", "MODIFIED"}]
+        committed_stop_labels = {
+            order.tranche
+            for order in orders
+            if order.type == "STOP" and order.tranche.startswith("S")
+        }
         return PositionView(
             symbol=row.symbol,
             phase=row.phase,
@@ -693,7 +735,7 @@ class CockpitService:
             trancheModes=[TrancheMode.model_validate(item) for item in row.tranche_modes],
             stopModes=[StopMode.model_validate(item) for item in row.stop_modes],
             rootOrderId=row.root_order_id,
-            stopMode=len(active_stops),
+            stopMode=len(committed_stop_labels),
             trancheCount=row.tranche_count,
         )
 
