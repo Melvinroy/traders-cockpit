@@ -73,13 +73,13 @@ $accountBody = @{
   mode = "paper"
 } | ConvertTo-Json
 
-$authSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-$null = Invoke-WebRequest `
+$authSession = $null
+Invoke-RestMethod `
   -Method Post `
   -Uri "http://127.0.0.1:$BackendPort/api/auth/login" `
   -ContentType "application/json" `
   -Body (@{ username = "admin"; password = "admin123!" } | ConvertTo-Json) `
-  -WebSession $authSession
+  -SessionVariable authSession | Out-Null
 
 Invoke-RestMethod `
   -Method Put `

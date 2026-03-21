@@ -52,4 +52,4 @@ This checklist covers stop-plan correctness, UI clarity, browser regression cove
 - [x] 47. Merge the tranche into `codex/integration-app`.
 - [x] 48. Re-run integration QC after merge.
 - [x] 49. Promote the tranche into `main`.
-- [x] 50. Push the final promoted state to GitHub.
+- [ ] 50. Push the final promoted state to GitHub.

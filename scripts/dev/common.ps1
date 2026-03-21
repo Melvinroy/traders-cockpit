@@ -4,16 +4,55 @@ function Get-RepoRoot {
 
 function Get-PortListener {
   param([Parameter(Mandatory = $true)][int]$Port)
-  return Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
+  return Get-PortListeners -Port $Port | Select-Object -First 1
+}
+
+function Get-PortListeners {
+  param([Parameter(Mandatory = $true)][int]$Port)
+  $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+  $active = @()
+  foreach ($listener in $listeners) {
+    try {
+      Get-Process -Id $listener.OwningProcess -ErrorAction Stop | Out-Null
+      $active += $listener
+    } catch {
+    }
+  }
+  return $active
 }
 
 function Stop-PortListenerProcess {
   param([Parameter(Mandatory = $true)][int]$Port)
 
-  $listener = Get-PortListener -Port $Port
-  if ($null -ne $listener) {
-    Stop-Process -Id $listener.OwningProcess -Force
+  $attempts = 0
+  while ($attempts -lt 5) {
+    $listeners = Get-PortListeners -Port $Port | Select-Object -ExpandProperty OwningProcess -Unique
+    if ($null -eq $listeners -or $listeners.Count -eq 0) {
+      return
+    }
+
+    foreach ($processId in $listeners) {
+      if (-not $processId) {
+        continue
+      }
+      try {
+        taskkill /PID $processId /T /F | Out-Null
+      } catch {
+        try {
+          Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+        } catch {
+        }
+      }
+    }
+
+    Start-Sleep -Milliseconds 400
+    if ($null -eq (Get-PortListener -Port $Port)) {
+      return
+    }
+    $attempts += 1
   }
+
+  throw "Failed to stop listener(s) on port $Port."
 }
 
 function Assert-PortFree {
