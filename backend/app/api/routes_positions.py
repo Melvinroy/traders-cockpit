@@ -3,13 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_session
 from app.db.session import get_db
 from app.schemas.cockpit import OrderView, PositionView
 from app.services.cockpit import CockpitService
 
 
 def build_router(service: CockpitService) -> APIRouter:
-    router = APIRouter(prefix="/api", tags=["positions"])
+    router = APIRouter(prefix="/api", tags=["positions"], dependencies=[Depends(require_session)])
 
     @router.get("/positions", response_model=list[PositionView])
     def get_positions(db: Session = Depends(get_db)) -> list[PositionView]:

@@ -24,7 +24,7 @@ const requestFailures = [];
 const pageErrors = [];
 
 function isRelevantFailure(url) {
-  return !url.includes("/_next/webpack-hmr");
+  return !url.includes("/_next/webpack-hmr") && !url.includes("/api/auth/me");
 }
 
 async function launchBrowser() {
@@ -33,6 +33,16 @@ async function launchBrowser() {
   } catch {
     return chromium.launch({ headless: true });
   }
+}
+
+async function loginIfNeeded(page) {
+  const loginTitle = page.getByText("Session Required");
+  if ((await loginTitle.count()) === 0) return false;
+  await page.getByLabel("Username").fill("admin");
+  await page.getByLabel("Password").fill("admin123!");
+  await page.getByRole("button", { name: "SIGN IN" }).click();
+  await page.getByText("Setup Parameters").waitFor({ timeout: 15000 });
+  return true;
 }
 
 const browser = await launchBrowser();
@@ -77,6 +87,13 @@ try {
     throw new Error(`Unexpected page title: ${title}`);
   }
 
+  const loggedIn = await loginIfNeeded(page);
+  if (loggedIn) {
+    consoleMessages.length = 0;
+    requestLog.length = 0;
+    requestFailures.length = 0;
+    pageErrors.length = 0;
+  }
   await page.getByRole("button", { name: /LOAD SETUP/ }).click();
   await page.getByText("SETUP LOADED").waitFor({ timeout: 15000 });
   await page.getByText("Suggested Entry").waitFor({ timeout: 15000 });
@@ -88,7 +105,9 @@ try {
   await fs.writeFile(consolePath, `${consoleMessages.join("\n")}\n`, "utf8");
   await fs.writeFile(networkPath, `${requestLog.join("\n")}\n`, "utf8");
 
-  const consoleErrors = consoleMessages.filter((entry) => entry.startsWith("[ERROR]"));
+  const consoleErrors = consoleMessages.filter(
+    (entry) => entry.startsWith("[ERROR]") && !entry.includes("401 (Unauthorized)")
+  );
   if (pageErrors.length || consoleErrors.length || requestFailures.length) {
     const details = [
       pageErrors.length ? `Page errors:\n${pageErrors.join("\n")}` : "",

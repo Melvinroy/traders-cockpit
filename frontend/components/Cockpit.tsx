@@ -5,11 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityLog } from "@/components/ActivityLog";
 import { CockpitHeader } from "@/components/CockpitHeader";
 import { EntryPanel } from "@/components/EntryPanel";
+import { LoginPanel } from "@/components/LoginPanel";
 import { ProfitTakingPanel } from "@/components/ProfitTakingPanel";
 import { SetupPanel } from "@/components/SetupPanel";
 import { StopProtectionPanel } from "@/components/StopProtectionPanel";
-import { api } from "@/lib/api";
-import type { AccountView, LogEntry, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
+import { ApiError, api } from "@/lib/api";
+import type { AccountView, AuthUser, LogEntry, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
 
 const DEFAULT_STOP_MODES: StopMode[] = [
   { mode: "stop", pct: null },
@@ -25,6 +26,11 @@ const DEFAULT_TRANCHE_MODES: TrancheMode[] = [
 
 export function Cockpit() {
   const [flashState, setFlashState] = useState<Record<string, number>>({});
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [ticker, setTicker] = useState("AAPL");
   const [account, setAccount] = useState<AccountView | null>(null);
   const [setup, setSetup] = useState<SetupResponse | null>(null);
@@ -72,65 +78,119 @@ export function Cockpit() {
     }, 420);
   }, []);
 
+  const handleApiError = useCallback((error: unknown) => {
+    if (error instanceof ApiError && error.status === 401) {
+      setAuthRequired(true);
+      setAuthUser(null);
+      setAuthError("Session expired or missing. Sign in to continue.");
+      return true;
+    }
+    setRuntimeError(error instanceof Error ? error.message : "Request failed.");
+    return false;
+  }, []);
+
   const subscribePrice = useCallback((symbol: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ action: "subscribe_price", symbol }));
     }
   }, []);
 
-  const applyPositionState = useCallback((position: PositionView) => {
-    activeSymbolRef.current = position.symbol;
-    setupLoadedRef.current = true;
-    setActiveSymbol(position.symbol);
-    setTicker(position.symbol);
-    setSetup(position.setup as SetupResponse);
-    setEntryPrice(position.setup.entry);
-    setManualStop(position.setup.finalStop);
-    setStopMode(position.stopMode || 3);
-    setStopModes(position.stopModes.length ? position.stopModes : DEFAULT_STOP_MODES);
-    setTrancheCount(position.trancheCount || 3);
-    setTrancheModes(position.trancheModes.length ? position.trancheModes : DEFAULT_TRANCHE_MODES);
-    subscribePrice(position.symbol);
-  }, [subscribePrice]);
+  const applyPositionState = useCallback(
+    (position: PositionView) => {
+      activeSymbolRef.current = position.symbol;
+      setupLoadedRef.current = true;
+      setActiveSymbol(position.symbol);
+      setTicker(position.symbol);
+      setSetup(position.setup as SetupResponse);
+      setEntryPrice(position.setup.entry);
+      setManualStop(position.setup.finalStop);
+      setStopMode(position.stopMode || 3);
+      setStopModes(position.stopModes.length ? position.stopModes : DEFAULT_STOP_MODES);
+      setTrancheCount(position.trancheCount || 3);
+      setTrancheModes(position.trancheModes.length ? position.trancheModes : DEFAULT_TRANCHE_MODES);
+      subscribePrice(position.symbol);
+    },
+    [subscribePrice]
+  );
 
-  const hydrate = useCallback(async (options?: { autoSelectFirst?: boolean }) => {
-    const autoSelectFirst = options?.autoSelectFirst ?? false;
-    const [accountView, positionRows, logRows] = await Promise.all([
-      api.getAccount(),
-      api.getPositions(),
-      api.getLogs()
-    ]);
-    const openPositions = positionRows.filter((position) => ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase));
-    setAccount(accountView);
-    setPositions(positionRows);
-    setLogs(logRows);
-
-    if (activeSymbolRef.current) {
-      const active = openPositions.find((position) => position.symbol === activeSymbolRef.current);
-      if (active) {
-        applyPositionState(active);
-        return;
+  const hydrate = useCallback(
+    async (options?: { autoSelectFirst?: boolean }) => {
+      const autoSelectFirst = options?.autoSelectFirst ?? false;
+      let accountView: AccountView;
+      let positionRows: PositionView[];
+      let logRows: LogEntry[];
+      try {
+        [accountView, positionRows, logRows] = await Promise.all([api.getAccount(), api.getPositions(), api.getLogs()]);
+      } catch (error) {
+        if (handleApiError(error)) return false;
+        throw error;
       }
-      activeSymbolRef.current = "";
-      setActiveSymbol("");
-    }
 
-    if (autoSelectFirst && !activeSymbolRef.current && !setupLoadedRef.current && openPositions[0]) {
-      applyPositionState(openPositions[0]);
-    }
-  }, [applyPositionState]);
+      const openPositions = positionRows.filter((position) =>
+        ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase)
+      );
+      setAccount(accountView);
+      setPositions(positionRows);
+      setLogs(logRows);
+      setAuthRequired(false);
+      setAuthError(null);
+      setRuntimeError(null);
 
-  const selectPosition = useCallback((symbol: string, source: PositionView[] = positions) => {
-    const position = source.find((item) => item.symbol === symbol);
-    if (!position) return;
-    applyPositionState(position);
-  }, [applyPositionState, positions]);
+      if (activeSymbolRef.current) {
+        const active = openPositions.find((position) => position.symbol === activeSymbolRef.current);
+        if (active) {
+          applyPositionState(active);
+          return;
+        }
+        activeSymbolRef.current = "";
+        setActiveSymbol("");
+      }
+
+      if (autoSelectFirst && !activeSymbolRef.current && !setupLoadedRef.current && openPositions[0]) {
+        applyPositionState(openPositions[0]);
+      }
+
+      return true;
+    },
+    [applyPositionState, handleApiError]
+  );
+
+  const loadSession = useCallback(async () => {
+    try {
+      const user = await api.me();
+      setAuthUser(user);
+      setAuthRequired(false);
+      setAuthError(null);
+      return user;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setAuthUser(null);
+        return null;
+      }
+      throw error;
+    }
+  }, []);
+
+  const selectPosition = useCallback(
+    (symbol: string, source: PositionView[] = positions) => {
+      const position = source.find((item) => item.symbol === symbol);
+      if (!position) return;
+      applyPositionState(position);
+    },
+    [applyPositionState, positions]
+  );
 
   useEffect(() => {
-    void hydrate({ autoSelectFirst: true });
-  }, [hydrate]);
+    void (async () => {
+      const hydrated = await hydrate({ autoSelectFirst: true });
+      if (hydrated) {
+        await loadSession();
+      }
+    })();
+  }, [hydrate, loadSession]);
 
   useEffect(() => {
+    if (authRequired) return;
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:8010/ws/cockpit";
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -155,10 +215,16 @@ export function Cockpit() {
       }
     };
     return () => ws.close();
-  }, [hydrate]);
+  }, [authRequired, hydrate]);
 
   const loadSetup = useCallback(async () => {
-    const nextSetup = await api.getSetup(ticker);
+    let nextSetup: SetupResponse;
+    try {
+      nextSetup = await api.getSetup(ticker);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
+    }
     activeSymbolRef.current = "";
     setupLoadedRef.current = true;
     setSetup(nextSetup);
@@ -170,7 +236,8 @@ export function Cockpit() {
     subscribePrice(ticker);
     await hydrate({ autoSelectFirst: false });
     pulse("load");
-  }, [hydrate, pulse, subscribePrice, ticker]);
+    setRuntimeError(null);
+  }, [handleApiError, hydrate, pulse, subscribePrice, ticker]);
 
   useEffect(() => {
     if (initialAutoloadRef.current) return;
@@ -188,90 +255,179 @@ export function Cockpit() {
 
   async function commitRiskPct(nextRiskPct: number) {
     if (!account) return;
-    await api.updateAccount({
-      equity: account.equity,
-      risk_pct: nextRiskPct,
-      mode: account.mode
-    });
-    if (ticker) {
-      const nextSetup = await api.getSetup(ticker);
-      setSetup(nextSetup);
-      setEntryPrice(nextSetup.entry);
-      setManualStop(nextSetup.finalStop);
+    try {
+      await api.updateAccount({
+        equity: account.equity,
+        risk_pct: nextRiskPct,
+        mode: account.mode
+      });
+      if (ticker) {
+        const nextSetup = await api.getSetup(ticker);
+        setSetup(nextSetup);
+        setEntryPrice(nextSetup.entry);
+        setManualStop(nextSetup.finalStop);
+      }
+      await hydrate({ autoSelectFirst: false });
+      setRuntimeError(null);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
     }
-    await hydrate({ autoSelectFirst: false });
   }
 
   async function previewTrade() {
     if (!setup) return;
-    await api.previewTrade({
-      symbol: ticker,
-      entry: entryPrice,
-      stopRef,
-      stopPrice: stopRef === "manual" ? manualStop : setup.finalStop,
-      riskPct: account?.risk_pct ?? setup.riskPct
-    });
-    await hydrate({ autoSelectFirst: false });
-    pulse("preview");
+    try {
+      await api.previewTrade({
+        symbol: ticker,
+        entry: entryPrice,
+        stopRef,
+        stopPrice: stopRef === "manual" ? manualStop : setup.finalStop,
+        riskPct: account?.risk_pct ?? setup.riskPct
+      });
+      await hydrate({ autoSelectFirst: false });
+      pulse("preview");
+      setRuntimeError(null);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
+    }
   }
 
   async function enterTrade() {
     if (!setup) return;
-    const position = await api.enterTrade({
-      symbol: ticker,
-      entry: entryPrice,
-      stopRef,
-      stopPrice: stopRef === "manual" ? manualStop : setup.finalStop,
-      trancheCount,
-      trancheModes
-    });
-    setStopMode((current) => current || 3);
-    await hydrate({ autoSelectFirst: false });
-    selectPosition(position.symbol, [position, ...positions]);
-    pulse("enter");
+    try {
+      const position = await api.enterTrade({
+        symbol: ticker,
+        entry: entryPrice,
+        stopRef,
+        stopPrice: stopRef === "manual" ? manualStop : setup.finalStop,
+        trancheCount,
+        trancheModes
+      });
+      setStopMode((current) => current || 3);
+      await hydrate({ autoSelectFirst: false });
+      selectPosition(position.symbol, [position, ...positions]);
+      pulse("enter");
+      setRuntimeError(null);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
+    }
   }
 
   async function executeStops() {
     const symbol = activeSymbol || ticker;
     if (!symbol) return;
-    const position = await api.applyStops({ symbol, stopMode, stopModes });
-    await hydrate({ autoSelectFirst: false });
-    selectPosition(position.symbol);
-    pulse("stop");
+    try {
+      const position = await api.applyStops({ symbol, stopMode, stopModes });
+      await hydrate({ autoSelectFirst: false });
+      selectPosition(position.symbol);
+      pulse("stop");
+      setRuntimeError(null);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
+    }
   }
 
   async function executeProfit() {
     const symbol = activeSymbol || ticker;
     if (!symbol) return;
-    const position = await api.executeProfit({ symbol, trancheModes });
-    await hydrate({ autoSelectFirst: false });
-    selectPosition(position.symbol);
-    pulse("profit");
+    try {
+      const position = await api.executeProfit({ symbol, trancheModes });
+      await hydrate({ autoSelectFirst: false });
+      selectPosition(position.symbol);
+      pulse("profit");
+      setRuntimeError(null);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
+    }
   }
 
   async function moveToBe() {
     if (!activeSymbol) return;
-    const position = await api.moveToBe(activeSymbol);
-    await hydrate({ autoSelectFirst: false });
-    selectPosition(position.symbol);
-    pulse("be");
+    try {
+      const position = await api.moveToBe(activeSymbol);
+      await hydrate({ autoSelectFirst: false });
+      selectPosition(position.symbol);
+      pulse("be");
+      setRuntimeError(null);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
+    }
   }
 
   async function flatten() {
     if (!activeSymbol) return;
-    const position = await api.flatten(activeSymbol);
-    await hydrate({ autoSelectFirst: false });
-    if (position.phase === "closed") {
-      activeSymbolRef.current = "";
-      setActiveSymbol("");
+    try {
+      const position = await api.flatten(activeSymbol);
+      await hydrate({ autoSelectFirst: false });
+      if (position.phase === "closed") {
+        activeSymbolRef.current = "";
+        setActiveSymbol("");
+      }
+      pulse("flatten");
+      setRuntimeError(null);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
     }
-    pulse("flatten");
   }
 
   async function clearLogs() {
-    await api.clearLogs();
-    await hydrate({ autoSelectFirst: false });
-    pulse("clear");
+    try {
+      await api.clearLogs();
+      await hydrate({ autoSelectFirst: false });
+      pulse("clear");
+      setRuntimeError(null);
+    } catch (error) {
+      if (handleApiError(error)) return;
+      throw error;
+    }
+  }
+
+  async function submitLogin(payload: { username: string; password: string }) {
+    setAuthBusy(true);
+    try {
+      const user = await api.login(payload);
+      setAuthUser(user);
+      setAuthRequired(false);
+      setAuthError(null);
+      await hydrate({ autoSelectFirst: true });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setAuthError("Invalid credentials.");
+        return;
+      }
+      setAuthError(error instanceof Error ? error.message : "Unable to sign in.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      await api.logout();
+    } finally {
+      setAuthUser(null);
+      setAuthRequired(true);
+      setAuthError(null);
+      setRuntimeError(null);
+      setSetup(null);
+      setPositions([]);
+      setLogs([]);
+      setAccount(null);
+      setActiveSymbol("");
+      activeSymbolRef.current = "";
+      setupLoadedRef.current = false;
+    }
+  }
+
+  if (authRequired) {
+    return <LoginPanel error={authError} busy={authBusy} onSubmit={submitLogin} />;
   }
 
   return (
@@ -302,7 +458,10 @@ export function Cockpit() {
         delta={delta}
         deltaPct={deltaPct}
         account={account}
+        authUser={authUser}
+        onLogout={() => void logout()}
       />
+      {runtimeError ? <div className="runtime-banner">{runtimeError}</div> : null}
       <div className="workspace">
         <SetupPanel
           symbol={activeSymbol || ticker}
