@@ -41,6 +41,15 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _normalize_database_url(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return raw
+    if raw.startswith("postgresql://"):
+        return raw.replace("postgresql://", "postgresql+psycopg://", 1)
+    return raw
+
+
 @dataclass
 class Settings:
     app_env: str
@@ -130,7 +139,7 @@ class Settings:
             auth_admin_password=os.getenv("AUTH_ADMIN_PASSWORD", "admin123!").strip(),
             auth_trader_username=os.getenv("AUTH_TRADER_USERNAME", "trader").strip(),
             auth_trader_password=os.getenv("AUTH_TRADER_PASSWORD", "trader123!").strip(),
-            database_url=os.getenv("DATABASE_URL", default_db).strip(),
+            database_url=_normalize_database_url(os.getenv("DATABASE_URL", default_db)),
             redis_url=os.getenv("REDIS_URL", "redis://127.0.0.1:56379/0").strip(),
             redis_channel_prefix=os.getenv("REDIS_CHANNEL_PREFIX", "traders-cockpit").strip(),
             cors_origins=[

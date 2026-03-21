@@ -133,6 +133,7 @@ Important defaults:
 - broker and market-data adapters can fall back to deterministic local data for development and tests
 - PostgreSQL on `55432` and Redis on `56379` are the default local persistence endpoints
 - SQLite is fallback-only and should be enabled explicitly when needed
+- hosted Postgres URLs that begin with `postgresql://` are normalized by the backend to `postgresql+psycopg://` so Render-style connection strings work with the installed driver
 
 Additional realtime/safety envs:
 
