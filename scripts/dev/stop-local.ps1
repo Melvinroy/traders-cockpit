@@ -14,6 +14,7 @@ foreach ($port in @($FrontendPort, $BackendPort)) {
   $listener = Get-PortListener -Port $port
   if ($null -ne $listener) {
     Stop-PortListenerProcess -Port $port
+    Wait-ForPortClosed -Port $port
     Write-Host "Stopped process on port $port"
   }
 }
