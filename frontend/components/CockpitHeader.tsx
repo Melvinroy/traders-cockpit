@@ -1,5 +1,5 @@
 import type { AccountView } from "@/lib/types";
-import { fp } from "@/lib/cockpit-ui";
+import { fp, phaseLabel } from "@/lib/cockpit-ui";
 
 type Props = {
   ticker: string;
@@ -44,7 +44,7 @@ export function CockpitHeader(props: Props) {
         </button>
       </div>
       <div className="badge badge-paper">{account?.effective_mode?.includes("live") ? "LIVE" : "\u25CF PAPER"}</div>
-      <div className={`state-display state-${phase}`}>{phase.replaceAll("_", " ").toUpperCase()}</div>
+      <div className={`state-display state-${phase}`}>{phaseLabel(phase)}</div>
       <div className="live-price" style={{ display: livePrice === null ? "none" : "block" }}>
         <span>{ticker}</span>
         <span> {fp(livePrice)}</span>

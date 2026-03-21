@@ -25,20 +25,19 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
       <div className="panel-header">
         <div className="panel-title">Setup Parameters</div>
         <div className="panel-symbol" id="setupSymbol">
-          {symbol ? <span className="ticker-symbol-large">{symbol}</span> : "-"}
+          {setup && symbol ? <span className="ticker-symbol-large">{symbol}</span> : "\u2014"}
         </div>
       </div>
       <div className="panel-body" id="setupBody">
         {!setup ? (
           <div className="empty-state">
-            <div className="empty-icon">{"\u2291"}</div>
+            <div className="empty-icon">{"\u22A1"}</div>
             Enter ticker and load setup
           </div>
         ) : (
           <>
             <div className="kv-group">
               <div className="kv-group-label">Quote</div>
-              <div className="kv-row"><span className="kv-label">Provider</span><span className="kv-val">{setup.provider}</span></div>
               <div className="kv-row"><span className="kv-label">Bid</span><span className="kv-val">{fp(setup.bid)}</span></div>
               <div className="kv-row"><span className="kv-label">Ask</span><span className="kv-val">{fp(setup.ask)}</span></div>
               <div className="kv-row"><span className="kv-label">Suggested Entry</span><span className="kv-val cyan">{fp(setup.entry)}</span></div>
@@ -78,16 +77,6 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
               <div className="kv-row"><span className="kv-label">Dollar Risk</span><span className="kv-val red">{fp(setup.dollarRisk)}</span></div>
               <div className="kv-row"><span className="kv-label">Per-Share Risk</span><span className="kv-val">{fp(setup.perShareRisk)}</span></div>
               <div className="kv-row"><span className="kv-label">Calc. Shares</span><span className="kv-val green">{setup.shares} sh</span></div>
-            </div>
-            <div className="kv-group">
-              <div className="kv-group-label">Safety</div>
-              <div className="kv-row"><span className="kv-label">Effective Mode</span><span className="kv-val">{account?.effective_mode ?? "paper"}</span></div>
-              <div className="kv-row"><span className="kv-label">Max Notional</span><span className="kv-val">{(account?.max_position_notional_pct ?? 100).toFixed(0)}%</span></div>
-              <div className="kv-row"><span className="kv-label">Daily Loss Limit</span><span className="kv-val">{(account?.daily_loss_limit_pct ?? 2).toFixed(1)}%</span></div>
-              <div className="kv-row"><span className="kv-label">Max Open Positions</span><span className="kv-val">{account?.max_open_positions ?? 6}</span></div>
-              {account?.live_disabled_reason ? (
-                <div className="kv-row"><span className="kv-label">Live Gate</span><span className="kv-val red">{account.live_disabled_reason}</span></div>
-              ) : null}
             </div>
             <div className="kv-group">
               <div className="kv-group-label">Reference</div>

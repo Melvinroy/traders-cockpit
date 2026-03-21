@@ -2,20 +2,31 @@ import type { OrderView, PositionView, SetupResponse, StopMode, Tranche, Tranche
 
 export const ACTIVE_PHASES = ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"] as const;
 
+const PHASE_LABELS: Record<string, string> = {
+  idle: "IDLE",
+  setup_loaded: "SETUP LOADED",
+  trade_entered: "TRADE ENTERED",
+  protected: "PROTECTED",
+  P1_done: "P1 DONE",
+  P2_done: "P2 DONE",
+  runner_only: "RUNNER ONLY",
+  closed: "CLOSED"
+};
+
 export function isActivePhase(phase: string): boolean {
   return ACTIVE_PHASES.includes(phase as (typeof ACTIVE_PHASES)[number]);
 }
 
 export function fp(value: number | null | undefined): string {
-  return Number.isFinite(value) ? Number(value).toFixed(2) : "--";
+  return Number.isFinite(value) ? Number(value).toFixed(2) : "\u2014";
 }
 
 export function f2(value: number | null | undefined): string {
-  return Number.isFinite(value) ? Number(value).toFixed(2) : "--";
+  return Number.isFinite(value) ? `$${Number(value).toFixed(2)}` : "\u2014";
 }
 
 export function signedMoney(value: number): string {
-  return `${value >= 0 ? "+" : ""}${f2(value)}`;
+  return `${value >= 0 ? "+" : "-"}${f2(Math.abs(value))}`;
 }
 
 export function formatLogTime(value: string): string {
@@ -25,6 +36,10 @@ export function formatLogTime(value: string): string {
     second: "2-digit",
     hour12: false
   });
+}
+
+export function phaseLabel(phase: string): string {
+  return PHASE_LABELS[phase] ?? phase.replaceAll("_", " ").toUpperCase();
 }
 
 export function splitShares(total: number, count: number): number[] {
