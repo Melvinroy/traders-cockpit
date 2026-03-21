@@ -880,6 +880,25 @@ select {
   font-size: 10px;
 }
 
+.plan-coverage {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 72px;
+}
+
+.plan-coverage-pill {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg0);
+  color: var(--text2);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
 .plan-pct {
   min-width: 46px;
   color: var(--green);

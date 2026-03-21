@@ -97,6 +97,11 @@ export function StopProtectionPanel(props: Props) {
                 </div>
                 <span className="plan-price">{fp(row.price)}</span>
                 <span className="plan-qty">{row.qty} sh</span>
+                <div className="plan-coverage">
+                  {row.coveredTranches.map((trancheId) => (
+                    <span className="plan-coverage-pill" key={`${row.label}-${trancheId}`}>{trancheId}</span>
+                  ))}
+                </div>
                 <span className={`plan-status ${statusClass}`}>{row.status}</span>
               </div>
             );

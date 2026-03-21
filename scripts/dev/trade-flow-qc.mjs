@@ -48,10 +48,16 @@ async function clearActivityLog() {
 async function expectStopModeRowCounts(page, expected, screenshotName) {
   const buttons = page.locator(".protect-controls .tranche-count-btn");
   const planRows = page.locator(".stop-plan-content .plan-line");
+  const labels = ["S1", "S1·S2", "S1·S2·S3"];
   for (const [index, key] of ["s1", "s1s2", "s1s2s3"].entries()) {
-    await buttons.nth(index).click();
-    let count = await planRows.count();
     const deadline = Date.now() + 3000;
+    let activeText = await page.locator(".protect-controls .tranche-count-btn.active").allTextContents();
+    while (!activeText.includes(labels[index]) && Date.now() < deadline) {
+      await buttons.nth(index).click();
+      await page.waitForTimeout(100);
+      activeText = await page.locator(".protect-controls .tranche-count-btn.active").allTextContents();
+    }
+    let count = await planRows.count();
     while (count !== expected[key] && Date.now() < deadline) {
       await page.waitForTimeout(100);
       count = await planRows.count();
@@ -61,6 +67,37 @@ async function expectStopModeRowCounts(page, expected, screenshotName) {
     }
   }
   await page.screenshot({ path: path.join(outputDir, screenshotName), fullPage: true });
+}
+
+async function expectCoverage(page, expected) {
+  const rows = page.locator(".stop-plan-content .plan-line");
+  for (let index = 0; index < expected.length; index += 1) {
+    let rowText = (await rows.nth(index).textContent()) ?? "";
+    const deadline = Date.now() + 3000;
+    while (expected[index].some((value) => !rowText.includes(value)) && Date.now() < deadline) {
+      await page.waitForTimeout(100);
+      rowText = (await rows.nth(index).textContent()) ?? "";
+    }
+    if (expected[index].some((value) => !rowText.includes(value))) {
+      throw new Error(`Coverage mismatch at row ${index + 1}: expected ${JSON.stringify(expected[index])}, got ${JSON.stringify(rowText)}`);
+    }
+  }
+}
+
+async function expectStatuses(page, expected) {
+  let statuses = await page.locator(".stop-plan-content .plan-status").evaluateAll((nodes) =>
+    nodes.map((node) => node.textContent?.trim() ?? "")
+  );
+  const deadline = Date.now() + 3000;
+  while (JSON.stringify(statuses) !== JSON.stringify(expected) && Date.now() < deadline) {
+    await page.waitForTimeout(100);
+    statuses = await page.locator(".stop-plan-content .plan-status").evaluateAll((nodes) =>
+      nodes.map((node) => node.textContent?.trim() ?? "")
+    );
+  }
+  if (JSON.stringify(statuses) !== JSON.stringify(expected)) {
+    throw new Error(`Status mismatch: expected ${JSON.stringify(expected)}, got ${JSON.stringify(statuses)}`);
+  }
 }
 
 const browser = await launchBrowser();
@@ -84,16 +121,21 @@ try {
   await page.getByRole("button", { name: /\u2197 ENTER TRADE|ENTER TRADE/ }).click();
   await page.locator(".state-display").filter({ hasText: "TRADE ENTERED" }).waitFor({ timeout: 15000 });
   await expectStopModeRowCounts(page, { s1: 1, s1s2: 2, s1s2s3: 3 }, "baseline-stop-mode-preview.png");
+  await expectCoverage(page, [["T1"], ["T2"], ["T3"]]);
+  await expectStatuses(page, ["PREVIEW", "PREVIEW", "PREVIEW"]);
   await page.screenshot({ path: path.join(outputDir, "baseline-trade-entered.png"), fullPage: true });
 
   const executeButtons = page.getByRole("button", { name: "EXECUTE" });
   await executeButtons.nth(0).click();
   await page.locator(".state-display").filter({ hasText: "PROTECTED" }).waitFor({ timeout: 15000 });
+  await expectStatuses(page, ["ACTIVE", "ACTIVE", "ACTIVE"]);
   await page.screenshot({ path: path.join(outputDir, "baseline-protected.png"), fullPage: true });
 
   await executeButtons.nth(1).click();
   await page.locator(".state-display").filter({ hasText: /P2 DONE|RUNNER ONLY|CLOSED/ }).waitFor({ timeout: 15000 });
   await expectStopModeRowCounts(page, { s1: 1, s1s2: 2, s1s2s3: 3 }, "baseline-stop-mode-active.png");
+  await expectCoverage(page, [["T1"], ["T2"], ["T3"]]);
+  await expectStatuses(page, ["CANCELED", "CANCELED", "ACTIVE"]);
   await page.screenshot({ path: path.join(outputDir, "baseline-profit-flow.png"), fullPage: true });
 } finally {
   await browser.close();
