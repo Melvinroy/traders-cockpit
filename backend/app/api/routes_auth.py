@@ -38,8 +38,8 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
         settings.auth_cookie_name,
         session_token,
         httponly=True,
-        samesite="lax",
-        secure=settings.is_production,
+        samesite=settings.auth_cookie_samesite,
+        secure=settings.auth_cookie_secure,
     )
     return LoginResponse(
         username=user.username,
@@ -51,5 +51,10 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
 @router.post("/logout")
 def logout(request: Request, response: Response) -> dict[str, bool]:
     auth_store.revoke_session(session_token=request.cookies.get(settings.auth_cookie_name))
-    response.delete_cookie(settings.auth_cookie_name)
+    response.delete_cookie(
+        settings.auth_cookie_name,
+        httponly=True,
+        samesite=settings.auth_cookie_samesite,
+        secure=settings.auth_cookie_secure,
+    )
     return {"ok": True}
