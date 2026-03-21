@@ -105,3 +105,9 @@ export type LogEntry = {
   message: string;
   created_at: string;
 };
+
+export type AuthUser = {
+  username: string;
+  role: string;
+  expires_at?: string | null;
+};

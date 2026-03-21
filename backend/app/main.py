@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.deps_auth import require_websocket_session
 from app.api import routes_account, routes_market, routes_positions, routes_trade
 from app.api.routes_auth import router as auth_router
 from app.core.config import Settings
@@ -63,6 +64,10 @@ def health() -> dict[str, str]:
 
 @app.websocket("/ws/cockpit")
 async def cockpit_ws(websocket: WebSocket) -> None:
+    try:
+        await require_websocket_session(websocket)
+    except RuntimeError:
+        return
     await ws_manager.connect("cockpit", websocket)
     try:
         while True:

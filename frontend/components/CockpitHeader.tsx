@@ -1,4 +1,4 @@
-import type { AccountView } from "@/lib/types";
+import type { AccountView, AuthUser } from "@/lib/types";
 import { fp, phaseLabel } from "@/lib/cockpit-ui";
 
 type Props = {
@@ -13,10 +13,26 @@ type Props = {
   delta: number;
   deltaPct: number;
   account: AccountView | null;
+  authUser: AuthUser | null;
+  onLogout: () => void;
 };
 
 export function CockpitHeader(props: Props) {
-  const { ticker, onTickerChange, onLoad, onReset, loadFlashing = false, resetFlashing = false, phase, livePrice, delta, deltaPct, account } = props;
+  const {
+    ticker,
+    onTickerChange,
+    onLoad,
+    onReset,
+    loadFlashing = false,
+    resetFlashing = false,
+    phase,
+    livePrice,
+    delta,
+    deltaPct,
+    account,
+    authUser,
+    onLogout
+  } = props;
   return (
     <div className="header">
       <div className="logo">
@@ -45,6 +61,17 @@ export function CockpitHeader(props: Props) {
       </div>
       <div className="badge badge-paper">{account?.effective_mode?.includes("live") ? "LIVE" : "\u25CF PAPER"}</div>
       <div className={`state-display state-${phase}`}>{phaseLabel(phase)}</div>
+      {authUser ? (
+        <div className="auth-strip">
+          <div className="auth-user">
+            {authUser.username}
+            <span>{authUser.role}</span>
+          </div>
+          <button type="button" className="btn btn-ghost auth-logout-btn" onClick={onLogout}>
+            LOGOUT
+          </button>
+        </div>
+      ) : null}
       <div className="live-price" style={{ display: livePrice === null ? "none" : "block" }}>
         <span>{ticker}</span>
         <span> {fp(livePrice)}</span>

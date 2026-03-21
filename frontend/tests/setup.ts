@@ -5,7 +5,21 @@ Object.defineProperty(globalThis, "fetch", {
   value: async (input: RequestInfo | URL) => {
     const url = String(input);
     const payload =
-      url.includes("/api/account")
+      url.includes("/api/auth/me")
+        ? {
+            username: "admin",
+            role: "admin",
+            expires_at: new Date(Date.now() + 60_000).toISOString()
+          }
+        : url.includes("/api/auth/login")
+          ? {
+              username: "admin",
+              role: "admin",
+              expires_at: new Date(Date.now() + 60_000).toISOString()
+            }
+          : url.includes("/api/auth/logout")
+            ? { ok: true }
+            : url.includes("/api/account")
         ? {
             equity: 25000,
             buying_power: 100000,
@@ -19,7 +33,7 @@ Object.defineProperty(globalThis, "fetch", {
             max_open_positions: 6,
             live_disabled_reason: null
           }
-        : url.includes("/api/positions")
+          : url.includes("/api/positions")
           ? []
           : url.includes("/api/activity-log")
             ? []
@@ -44,7 +58,11 @@ Object.defineProperty(globalThis, "fetch", {
 
 class MockWebSocket {
   readyState = 1;
+  onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
+  constructor() {
+    queueMicrotask(() => this.onopen?.());
+  }
   close() {}
   send() {}
 }

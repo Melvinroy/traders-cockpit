@@ -1,6 +1,15 @@
-import type { AccountView, LogEntry, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
+import type { AccountView, AuthUser, LogEntry, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -14,12 +23,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(detail || `Request failed for ${path}`);
+    throw new ApiError(response.status, detail || `Request failed for ${path}`);
   }
   return response.json() as Promise<T>;
 }
 
 export const api = {
+  me: () => request<AuthUser>("/api/auth/me"),
+  login: (payload: { username: string; password: string }) =>
+    request<AuthUser>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   getAccount: () => request<AccountView>("/api/account"),
   updateAccount: (payload: { equity: number; risk_pct: number; mode: string }) =>
     request<AccountView>("/api/account/settings", { method: "PUT", body: JSON.stringify(payload) }),

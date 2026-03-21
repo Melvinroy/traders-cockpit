@@ -23,8 +23,27 @@ async function launchBrowser() {
   }
 }
 
+async function loginBackend() {
+  const response = await fetch(`${backendUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "admin", password: "admin123!" })
+  });
+  if (!response.ok) {
+    throw new Error(`Unable to authenticate against ${backendUrl}`);
+  }
+  const cookie = response.headers.get("set-cookie");
+  if (!cookie) {
+    throw new Error("Missing auth cookie from backend login.");
+  }
+  return cookie.split(";")[0];
+}
+
 async function flattenOpenPositions() {
-  const positionsResponse = await fetch(`${backendUrl}/api/positions`);
+  const authCookie = await loginBackend();
+  const positionsResponse = await fetch(`${backendUrl}/api/positions`, {
+    headers: { Cookie: authCookie }
+  });
   if (!positionsResponse.ok) {
     throw new Error(`Unable to read positions from ${backendUrl}`);
   }
@@ -33,16 +52,27 @@ async function flattenOpenPositions() {
     if (position.phase === "closed") continue;
     await fetch(`${backendUrl}/api/trade/flatten`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Cookie: authCookie },
       body: JSON.stringify({ symbol: position.symbol })
     });
   }
 }
 
 async function clearActivityLog() {
+  const authCookie = await loginBackend();
   await fetch(`${backendUrl}/api/activity-log`, {
-    method: "DELETE"
+    method: "DELETE",
+    headers: { Cookie: authCookie }
   });
+}
+
+async function loginUiIfNeeded(page) {
+  const loginTitle = page.getByText("Session Required");
+  if ((await loginTitle.count()) === 0) return;
+  await page.getByLabel("Username").fill("admin");
+  await page.getByLabel("Password").fill("admin123!");
+  await page.getByRole("button", { name: "SIGN IN" }).click();
+  await page.getByText("Setup Parameters").waitFor({ timeout: 15000 });
 }
 
 async function expectStopModeRowCounts(page, expected, screenshotName) {
@@ -113,6 +143,7 @@ try {
     throw new Error(`Frontend root failed to load for flow QC at ${frontendUrl}.`);
   }
 
+  await loginUiIfNeeded(page);
   await page.getByRole("button", { name: "RESET" }).click();
   await page.getByRole("textbox").fill("MSFT");
   await page.getByRole("button", { name: /LOAD SETUP/ }).click();

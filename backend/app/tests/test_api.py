@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy import select
 
 db_path = Path(__file__).resolve().parent / "test.db"
 if db_path.exists():
@@ -26,6 +25,7 @@ from app.main import app  # noqa: E402
 from app.models.entities import OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
 from app.services.auth import get_auth_store  # noqa: E402
 from app.core.config import Settings  # noqa: E402
+from app.api import deps_auth  # noqa: E402
 
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
@@ -95,6 +95,23 @@ def test_login_creates_session_and_me_resolves_user() -> None:
 
     after = client.get("/api/auth/me")
     assert after.status_code == 401
+
+
+def test_sensitive_routes_require_session_when_auth_is_enabled() -> None:
+    previous = deps_auth.settings.auth_require_login
+    deps_auth.settings.auth_require_login = True
+    try:
+        unauthenticated = client.get("/api/account")
+        assert unauthenticated.status_code == 401
+
+        login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123!"})
+        assert login.status_code == 200
+
+        authenticated = client.get("/api/account")
+        assert authenticated.status_code == 200
+    finally:
+        deps_auth.settings.auth_require_login = previous
+        client.post("/api/auth/logout")
 
 
 def test_trade_lifecycle() -> None:

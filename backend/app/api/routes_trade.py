@@ -3,13 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_session
 from app.db.session import get_db
 from app.schemas.cockpit import MoveToBeRequest, PositionView, ProfitRequest, StopsRequest, TradeEnterRequest, TradePreviewRequest
 from app.services.cockpit import CockpitService
 
 
 def build_router(service: CockpitService) -> APIRouter:
-    router = APIRouter(prefix="/api/trade", tags=["trade"])
+    router = APIRouter(prefix="/api/trade", tags=["trade"], dependencies=[Depends(require_session)])
 
     @router.post("/preview")
     def preview(payload: TradePreviewRequest, db: Session = Depends(get_db)) -> dict:

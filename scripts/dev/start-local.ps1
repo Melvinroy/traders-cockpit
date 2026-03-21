@@ -73,11 +73,20 @@ $accountBody = @{
   mode = "paper"
 } | ConvertTo-Json
 
+$authSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$null = Invoke-WebRequest `
+  -Method Post `
+  -Uri "http://127.0.0.1:$BackendPort/api/auth/login" `
+  -ContentType "application/json" `
+  -Body (@{ username = "admin"; password = "admin123!" } | ConvertTo-Json) `
+  -WebSession $authSession
+
 Invoke-RestMethod `
   -Method Put `
   -Uri "http://127.0.0.1:$BackendPort/api/account/settings" `
   -ContentType "application/json" `
-  -Body $accountBody | Out-Null
+  -Body $accountBody `
+  -WebSession $authSession | Out-Null
 
 $frontendCmd = @(
   "set ""NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:$BackendPort""",
