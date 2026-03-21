@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-20
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Runtime QC And CORS Stabilization
 
 ## Problem
@@ -30,3 +35,4 @@ This work turns the scaffold into a verifiable local development slice that can 
 
 - local ports can already be occupied by unrelated services
 - the current workflow still depends on manual local process management until scripts are expanded further
+

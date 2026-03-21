@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-21
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Stop Plan Regression Hardening
 
 ## Goal
@@ -18,3 +23,4 @@ This must hold both before stop execution and in later active states such as `PR
 - Browser QC fails if stop-mode selector counts regress.
 - `S1`, `S2`, and `S3` remain understandable in later active states.
 - Active, modified, canceled, and preview stop rows are visually distinguishable.
+

@@ -11,6 +11,49 @@ export class ApiError extends Error {
   }
 }
 
+function formatValidationDetail(detail: unknown): string | null {
+  if (!Array.isArray(detail) || detail.length === 0) return null;
+  const parts = detail
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const message = typeof item.msg === "string" ? item.msg : null;
+      const location = Array.isArray(item.loc)
+        ? item.loc.filter((value: unknown) => typeof value === "string" || typeof value === "number").join(".")
+        : null;
+      if (!message) return null;
+      return location ? `${location}: ${message}` : message;
+    })
+    .filter((item): item is string => Boolean(item));
+  return parts.length ? parts.join("; ") : null;
+}
+
+async function readErrorMessage(path: string, response: Response): Promise<string> {
+  const raw = (await response.text()).trim();
+  if (!raw) {
+    return `Request failed for ${path}`;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as { detail?: unknown; message?: unknown };
+    if (typeof parsed.detail === "string") {
+      return parsed.detail === "Not Found" ? "Requested resource was not found." : parsed.detail;
+    }
+    const validationMessage = formatValidationDetail(parsed.detail);
+    if (validationMessage) {
+      return validationMessage;
+    }
+    if (typeof parsed.message === "string") {
+      return parsed.message;
+    }
+  } catch {
+    if (raw === "Not Found") {
+      return "Requested resource was not found.";
+    }
+  }
+
+  return raw;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -22,8 +65,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     cache: "no-store"
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new ApiError(response.status, detail || `Request failed for ${path}`);
+    const detail = await readErrorMessage(path, response);
+    throw new ApiError(response.status, detail);
   }
   return response.json() as Promise<T>;
 }

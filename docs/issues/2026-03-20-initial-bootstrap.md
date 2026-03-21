@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-20
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Initial GitHub Bootstrap
 
 ## Problem
@@ -26,3 +31,4 @@ This creates the durable source-control foundation required for issue-first deli
 
 - Current implementation still has known failing checks that should be fixed in follow-up work
 - Initial bootstrap precedes full PR-based promotion because the remote does not exist yet
+

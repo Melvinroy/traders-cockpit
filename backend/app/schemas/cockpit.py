@@ -73,6 +73,13 @@ class LogEntry(BaseModel):
 class SetupResponse(BaseModel):
     symbol: str
     provider: str = "mock"
+    providerState: str = "fallback_all"
+    quoteProvider: str = "mock"
+    technicalsProvider: str = "mock"
+    executionProvider: str = "paper"
+    quoteIsReal: bool = False
+    technicalsAreFallback: bool = True
+    fallbackReason: str | None = None
     quoteTimestamp: datetime | None = None
     entryBasis: str = "midpoint"
     stopReferenceDefault: str = "lod"

@@ -22,6 +22,8 @@ const consoleMessages = [];
 const requestLog = [];
 const requestFailures = [];
 const pageErrors = [];
+const authUsername = process.env.QC_AUTH_USERNAME || "admin";
+const authPassword = process.env.QC_AUTH_PASSWORD || "admin123!";
 
 function isRelevantFailure(url) {
   return !url.includes("/_next/webpack-hmr") && !url.includes("/api/auth/me");
@@ -38,8 +40,8 @@ async function launchBrowser() {
 async function loginIfNeeded(page) {
   const loginTitle = page.getByText("Session Required");
   if ((await loginTitle.count()) === 0) return false;
-  await page.getByLabel("Username").fill("admin");
-  await page.getByLabel("Password").fill("admin123!");
+  await page.getByLabel("Username").fill(authUsername);
+  await page.getByLabel("Password").fill(authPassword);
   await page.getByRole("button", { name: "SIGN IN" }).click();
   await page.getByText("Setup Parameters").waitFor({ timeout: 15000 });
   return true;

@@ -5,7 +5,7 @@ This matrix tracks implementation status, reuse decisions, and remaining work fo
 | Component | Status | Current State | TradeCtrl Reuse | Remaining Work |
 |---|---|---|---|---|
 | Repo structure | Complete | Monorepo with frontend, backend, docs, scripts, CI, and release docs | Reused workflow shape and repo hygiene conventions | None |
-| Git/GitHub workflow | Complete | Issue-first, `codex/*`, staged promotion through `codex/integration-app` | Reused staged promotion discipline | Keep branch protections enabled in GitHub |
+| Git/GitHub workflow | Partial | Issue-first and staged promotion are in place; branch and issue lifecycle cleanup is now scripted | Reused staged promotion discipline | Backfill legacy issue-doc status and keep merged branches trimmed after each promotion |
 | Frontend cockpit shell | Complete | Working Next.js cockpit with the prototype sections wired | Reused process conventions, not UI code | Continue literal parity polish as needed |
 | Stop protection and profit workflow | Complete | `S1`, `S1·S2`, `S1·S2·S3`, tranche coverage, runner flow, browser regressions | Adapted safety discipline, not implementation | Continue UX polish |
 | Orders blotter and activity log | Partial | Functional and increasingly audit-friendly | Reused recovery-first conventions | More visual and audit-detail polish |
@@ -13,8 +13,8 @@ This matrix tracks implementation status, reuse decisions, and remaining work fo
 | Env/config bootstrapping | Complete | Root/backend `.env` bootstrapping with typed settings | Adapted from `TradeCtrl` config bootstrap and naming | Continue env parity when new hosted requirements appear |
 | Auth/session handling | Complete | Session-backed login with seeded dev users, protected API routes, authenticated websocket entry, and frontend login/logout UX | Adapted from `TradeCtrl` auth store and session model | Add stronger hosted role/ops policy if needed |
 | Broker mode and live gating | Complete | Paper-first, live explicitly gated | Reused `TradeCtrl` safety model and env names | Add deeper production operator checks if needed |
-| Alpaca integration | Partial | Paper/live config and adapter scaffolding exist | Reuse adapter shape, env names, and controller conventions from `TradeCtrl` | Deeper real-broker reconciliation and hosted validation |
-| Market data normalization | Partial | Setup contract is normalized for the cockpit UI | Reused provider/env naming conventions | More provider-specific validation |
+| Alpaca integration | Partial | Local personal-paper profile and provider metadata now distinguish real Alpaca paper quotes/execution from fallback paths | Reuse adapter shape, env names, and controller conventions from `TradeCtrl` | Deeper real-broker reconciliation and hosted validation |
+| Market data normalization | Partial | Setup contract now surfaces quote, technicals, execution, and fallback provenance | Reused provider/env naming conventions | More provider-specific validation and real derived technicals |
 | Trading database | Complete | Dedicated `traders-cockpit` Postgres DB and Alembic history | Kept separate by design | None |
 | Auth/session database | Complete | Dedicated local auth/session store for `traders-cockpit` | Reused `TradeCtrl` storage pattern, not the same file/DB | Consider moving to Postgres-backed auth later if desired |
 | Redis/WebSocket backbone | Partial | Redis-backed fanout with normalized websocket events | Reused realtime hardening conventions | More hosted multi-instance validation |

@@ -194,5 +194,19 @@ class Settings:
         return self.database_url.startswith("sqlite")
 
     @property
+    def uses_alpaca_broker(self) -> bool:
+        return self.broker_mode in {"alpaca_paper", "alpaca_live"}
+
+    @property
+    def broker_execution_provider(self) -> str:
+        if self.uses_alpaca_broker and self.has_alpaca_credentials:
+            return self.broker_mode
+        return "paper"
+
+    @property
+    def local_personal_paper_ready(self) -> bool:
+        return self.broker_mode == "alpaca_paper" and not self.allow_live_trading and self.has_alpaca_credentials
+
+    @property
     def live_trading_enabled(self) -> bool:
         return self.broker_mode == "alpaca_live" and self.allow_live_trading and bool(self.live_confirmation_token)

@@ -11,6 +11,8 @@ const playwrightEntry = require.resolve("playwright", {
 });
 const playwrightModule = await import(pathToFileURL(playwrightEntry).href);
 const { chromium } = playwrightModule.default ?? playwrightModule;
+const authUsername = process.env.QC_AUTH_USERNAME || "admin";
+const authPassword = process.env.QC_AUTH_PASSWORD || "admin123!";
 
 function safeName(value) {
   return value.toLowerCase().replace(/[^a-z0-9-_]+/g, "-");
@@ -24,6 +26,15 @@ async function launchBrowser() {
   }
 }
 
+async function loginIfNeeded(page) {
+  const loginTitle = page.getByText("Session Required");
+  if ((await loginTitle.count()) === 0) return;
+  await page.getByLabel("Username").fill(authUsername);
+  await page.getByLabel("Password").fill(authPassword);
+  await page.getByRole("button", { name: "SIGN IN" }).click();
+  await page.getByText("Setup Parameters").waitFor({ timeout: 15000 });
+}
+
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
 
@@ -34,6 +45,7 @@ try {
   if (!response || response.status() >= 400) {
     throw new Error(`Frontend root failed to load for baseline capture at ${frontendUrl}.`);
   }
+  await loginIfNeeded(page);
 
   await page.getByRole("button", { name: "RESET" }).click();
   await page.getByText("IDLE").waitFor({ timeout: 10000 });

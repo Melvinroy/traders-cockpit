@@ -1,5 +1,7 @@
 # Hosted Deployment
 
+Hosted deployment is a trailing deliverable. Validate the local paper-trading path first, then redeploy hosted staging from a known-good local state.
+
 ## Recommended Topology
 
 - Frontend: Vercel

@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-21
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Stop Coverage Hints
 
 ## Goal
@@ -13,3 +18,4 @@ Make each stop row explicitly show which tranches it covers so the stop plan is 
 - `S1·S2` shows grouped tranche coverage.
 - `S1·S2·S3` shows one tranche per stop row.
 - Coverage remains visible in protected and runner-only states.
+

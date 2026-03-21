@@ -1,3 +1,8 @@
+> Status: Closed (legacy backfill)
+> Branch: historical / pre-lifecycle-header
+> Opened: 2026-03-20
+> Closed: 2026-03-22
+> Closing Commit: Legacy backfill during repo hygiene; historical promotion commit predates required lifecycle headers
 # Branch And PR Discipline Hardening
 
 GitHub issue: #2
@@ -22,3 +27,4 @@ This removes ambiguity from feature delivery, keeps `codex/integration-app` mean
 - [ ] a contributor can follow docs alone to open the correct PR
 - [ ] required checks are documented for frontend, backend, and browser QC
 - [ ] promotion criteria into `main` are explicit
+
