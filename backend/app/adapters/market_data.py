@@ -90,9 +90,18 @@ class AlpacaPolygonMarketDataAdapter:
         self.settings = settings
         self.fallback = MockMarketDataAdapter()
 
+    def _fail_or_fallback(self, symbol: str, reason: str, message: str) -> SetupMarketData:
+        if self.settings.allow_controller_mock:
+            return self.fallback.get_setup_data(symbol, fallback_reason=reason)
+        raise ValueError(message)
+
     def get_setup_data(self, symbol: str) -> SetupMarketData:
         if not self.settings.has_alpaca_credentials:
-            return self.fallback.get_setup_data(symbol, fallback_reason="alpaca_credentials_missing")
+            return self._fail_or_fallback(
+                symbol,
+                reason="alpaca_credentials_missing",
+                message="Alpaca paper credentials are missing for latest quote retrieval.",
+            )
         try:
             with httpx.Client(
                 base_url=self.settings.alpaca_data_base_url,
@@ -132,5 +141,9 @@ class AlpacaPolygonMarketDataAdapter:
                 rvol=fallback.rvol,
                 days_to_cover=fallback.days_to_cover,
             )
-        except Exception:
-            return self.fallback.get_setup_data(symbol, fallback_reason="alpaca_quote_unavailable")
+        except Exception as exc:
+            return self._fail_or_fallback(
+                symbol,
+                reason="alpaca_quote_unavailable",
+                message=f"Latest Alpaca quote is unavailable for {symbol.upper()}: {exc}",
+            )

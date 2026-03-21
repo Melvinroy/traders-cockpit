@@ -49,41 +49,52 @@ See:
 
 ### Recommended Local Bootstrap
 
-For deterministic development and tests:
+For real local Alpaca paper trading, Docker + localhost is the canonical runtime:
+
+```powershell
+Copy-Item .env.personal-paper.example .env.personal-paper.local
+.\scripts\dev\start-docker-local-personal-paper.ps1 -Build
+```
+
+This starts:
+
+- Frontend on `3000`
+- Backend on `8000`
+- PostgreSQL on `55432`
+- Redis on `56379`
+
+If those localhost ports are already used by another stack, override them explicitly:
+
+```powershell
+.\scripts\dev\start-docker-local-personal-paper.ps1 -Build -FrontendPort 3100 -BackendPort 8100 -PostgresPort 55452 -RedisPort 56399
+```
+
+The Docker-local personal-paper path fails fast unless:
+
+- `BROKER_MODE=alpaca_paper`
+- `ALLOW_LIVE_TRADING=false`
+- `ALLOW_CONTROLLER_MOCK=false`
+- Alpaca paper credentials are present
+
+For deterministic development and tests, keep using the existing script-driven local path:
 
 ```powershell
 .\scripts\dev\start-local.ps1
 ```
 
-For real local Alpaca paper trading:
+To stop the Docker-local personal-paper stack:
 
 ```powershell
-Copy-Item .env.personal-paper.example .env.personal-paper.local
-.\scripts\dev\start-local-personal-paper.ps1
+.\scripts\dev\stop-docker-local-personal-paper.ps1
 ```
 
-`start-local-personal-paper.ps1` fails fast unless Alpaca paper credentials are present, `BROKER_MODE=alpaca_paper`, and live trading remains disabled.
-
-This starts:
-
-- PostgreSQL on `55432`
-- Redis on `56379`
-- Backend on `8010`
-- Frontend on `3010`
-
-To stop the local stack:
+To run the real Docker-local paper smoke flow:
 
 ```powershell
-.\scripts\dev\stop-local.ps1
+.\scripts\dev\run-docker-local-paper-smoke.ps1 -StartStack -Build
 ```
 
-To run the full local QC path, including browser smoke:
-
-```powershell
-.\scripts\dev\run-qc.ps1 -StartStack
-```
-
-To validate and QC the personal-paper profile explicitly:
+To validate and QC the script-driven personal-paper profile explicitly:
 
 ```powershell
 .\scripts\dev\check-local-paper-readiness.ps1 -EnvFile ".env.personal-paper.local"
@@ -92,8 +103,8 @@ To validate and QC the personal-paper profile explicitly:
 
 ### Docker
 
-```bash
-docker compose up --build
+```powershell
+docker compose --env-file .env.personal-paper.local up --build -d
 ```
 
 Frontend:
@@ -143,14 +154,15 @@ Copy `.env.example` to `.env` at the repo root and fill only the values you need
 
 Important defaults:
 
-- paper mode first
-- local personal-paper mode is the primary runtime for real usage; hosted deploys come after local validation
+- paper mode first for deterministic tests
+- Docker-local personal-paper mode is the primary runtime for real usage; hosted deploys come after local validation
 - live mode disabled unless explicitly allowed
 - local session auth enabled by default
 - staged/hosted deployments should use `AUTH_COOKIE_SAMESITE=none` and `AUTH_COOKIE_SECURE=true` so the hosted frontend can authenticate against a separate backend origin
 - auth sessions are stored separately from trading data in `AUTH_DB_PATH`, following the TradeCtrl session-store pattern without sharing the same database
 - broker and market-data adapters can fall back to deterministic local data for development and tests
-- in local personal-paper mode, the latest quote and execution path use Alpaca when credentials are present; derived technical fields remain fallback-backed for now
+- in Docker-local personal-paper mode, the latest quote and execution path must come from Alpaca; derived technical fields remain fallback-backed for now
+- if Alpaca quote or execution fails in Docker-local personal-paper mode, the app fails loudly instead of silently degrading to mock behavior
 - PostgreSQL on `55432` and Redis on `56379` are the default local persistence endpoints
 - SQLite is fallback-only and should be enabled explicitly when needed
 - hosted Postgres URLs that begin with `postgresql://` are normalized by the backend to `postgresql+psycopg://` so Render-style connection strings work with the installed driver
