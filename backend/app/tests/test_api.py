@@ -24,7 +24,7 @@ from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.entities import OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
 from app.services.auth import get_auth_store  # noqa: E402
-from app.core.config import Settings  # noqa: E402
+from app.core.config import Settings, _normalize_database_url  # noqa: E402
 from app.api import deps_auth  # noqa: E402
 
 Base.metadata.drop_all(bind=engine)
@@ -75,6 +75,18 @@ def test_setup_endpoint_returns_contract() -> None:
     assert data["entryBasis"] == "bid_ask_midpoint"
     assert data["entry"] > data["finalStop"]
     assert data["shares"] > 0
+
+
+def test_postgres_urls_normalize_to_psycopg_driver() -> None:
+    assert (
+        _normalize_database_url("postgresql://user:pass@host:5432/dbname")
+        == "postgresql+psycopg://user:pass@host:5432/dbname"
+    )
+    assert (
+        _normalize_database_url("postgresql+psycopg://user:pass@host:5432/dbname")
+        == "postgresql+psycopg://user:pass@host:5432/dbname"
+    )
+    assert _normalize_database_url("sqlite:///./data/test.db") == "sqlite:///./data/test.db"
 
 
 def test_login_creates_session_and_me_resolves_user() -> None:
