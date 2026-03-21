@@ -19,9 +19,10 @@ os.environ["AUTH_REQUIRE_LOGIN"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.adapters.broker import AlpacaBrokerAdapter  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
-from app.main import app  # noqa: E402
+from app.main import app, service  # noqa: E402
 from app.models.entities import OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
 from app.services.auth import get_auth_store  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
@@ -104,6 +105,35 @@ def test_local_personal_paper_ready_requires_real_alpaca_creds(monkeypatch: pyte
 
     monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
     assert Settings.from_env().local_personal_paper_ready is False
+
+
+def test_alpaca_market_order_fails_loudly_without_mock_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BROKER_MODE", "alpaca_paper")
+    monkeypatch.setenv("ALLOW_CONTROLLER_MOCK", "false")
+    monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
+    monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
+
+    adapter = AlpacaBrokerAdapter(Settings.from_env())
+    with pytest.raises(ValueError, match="credentials are missing"):
+        adapter.place_market_order("MSFT", 10, "buy")
+
+
+def test_setup_fails_loudly_when_real_quote_is_unavailable() -> None:
+    original_allow_mock = service.settings.allow_controller_mock
+    original_get_setup_data = service.market_data.get_setup_data
+    service.settings.allow_controller_mock = False
+
+    def fail_quote(_symbol: str):
+        raise ValueError("Latest Alpaca quote is unavailable for MSFT")
+
+    service.market_data.get_setup_data = fail_quote
+    try:
+        response = client.get("/api/setup/MSFT")
+        assert response.status_code == 400
+        assert "Latest Alpaca quote is unavailable" in response.text
+    finally:
+        service.settings.allow_controller_mock = original_allow_mock
+        service.market_data.get_setup_data = original_get_setup_data
 
 
 def test_login_creates_session_and_me_resolves_user() -> None:

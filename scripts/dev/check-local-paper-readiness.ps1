@@ -35,6 +35,9 @@ if ($brokerMode -ne "alpaca_paper") {
 if ($allowLiveTrading) {
   $issues += "ALLOW_LIVE_TRADING must remain false for local personal-paper mode."
 }
+if (Read-BoolValue -Value (Get-ResolvedValue -EnvValues $profileEnv -Key "ALLOW_CONTROLLER_MOCK" -Default "false") -Default $false) {
+  $issues += "ALLOW_CONTROLLER_MOCK must be false for the real local personal-paper mode."
+}
 if ([string]::IsNullOrWhiteSpace($alpacaKeyId) -or [string]::IsNullOrWhiteSpace($alpacaSecret)) {
   $issues += "ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY must be set."
 }

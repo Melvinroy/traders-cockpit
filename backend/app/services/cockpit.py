@@ -133,6 +133,12 @@ class CockpitService:
         self._validate_tranche_modes(payload.trancheCount, payload.trancheModes)
         self._enforce_risk_checks(db, symbol, payload.entry, setup.shares)
         qtys = self._split_shares(setup.shares, payload.trancheCount)
+        broker = self.broker.place_market_order(symbol, setup.shares, "buy")
+        entry_filled = True
+        try:
+            self.broker.wait_for_position(symbol, min_qty=setup.shares, timeout_seconds=5.0)
+        except ValueError:
+            entry_filled = False
         tranches = [
             Tranche(
                 id=f"T{i+1}",
@@ -146,12 +152,11 @@ class CockpitService:
             for i, qty in enumerate(qtys)
         ]
         root_order_id = self._next_order_id(db)
-        broker = self.broker.place_market_order(symbol, setup.shares, "buy")
         position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol))
         if position is None:
             position = PositionEntity(
                 symbol=symbol,
-                phase="trade_entered",
+                phase="trade_entered" if entry_filled else "entry_pending",
                 entry_price=payload.entry,
                 live_price=setup.last,
                 shares=setup.shares,
@@ -168,7 +173,7 @@ class CockpitService:
             )
             db.add(position)
         else:
-            position.phase = "trade_entered"
+            position.phase = "trade_entered" if entry_filled else "entry_pending"
             position.entry_price = payload.entry
             position.live_price = setup.last
             position.shares = setup.shares
@@ -191,16 +196,24 @@ class CockpitService:
                 qty=setup.shares,
                 orig_qty=setup.shares,
                 price=payload.entry,
-                status="FILLED",
+                status="FILLED" if entry_filled else broker.status,
                 tranche_label=symbol,
                 covered_tranches=[],
                 parent_id=None,
                 created_at=utcnow(),
-                filled_at=utcnow(),
-                fill_price=payload.entry,
+                filled_at=utcnow() if entry_filled else None,
+                fill_price=payload.entry if entry_filled else None,
             )
         )
-        self._log(db, symbol, "exec", f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f} (MKT simulated)")
+        if entry_filled:
+            self._log(db, symbol, "exec", f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f} (Alpaca paper)")
+        else:
+            self._log(
+                db,
+                symbol,
+                "warn",
+                f"Entry submitted: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f} (waiting for Alpaca paper fill)",
+            )
         self._log(db, symbol, "sys", "Tranches: " + " \u00b7 ".join(f"T{i+1}={qty}sh" for i, qty in enumerate(qtys)))
         db.commit()
         view = self.get_position(db, symbol)
@@ -214,6 +227,16 @@ class CockpitService:
         self._reject_duplicate_active_stops(db, position.symbol)
         stop_range = round(position.entry_price - position.stop_price, 2)
         current_tranches = deepcopy(position.tranches)
+        try:
+            self.broker.wait_for_position(
+                position.symbol,
+                min_qty=sum(tranche["qty"] for tranche in current_tranches if tranche["status"] == "active"),
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"Protective stops are blocked until the Alpaca paper entry is filled for {position.symbol}. {exc}"
+            ) from exc
+        self._mark_entry_filled_if_ready(db, position)
         for index, group in enumerate(self._stop_groups(current_tranches, payload.stopMode)):
             config = payload.stopModes[index]
             pct = self._default_stop_pct(config, index, payload.stopMode)
@@ -270,6 +293,7 @@ class CockpitService:
         per_share_risk = round(position.entry_price - position.stop_price, 2)
         phase = position.phase
         executed_count = 0
+        self._cancel_broker_exit_orders(db, position.symbol, {"STOP"})
         for index, tranche in enumerate(tranches):
             if tranche["status"] != "active":
                 continue
@@ -342,6 +366,7 @@ class CockpitService:
     async def move_to_be(self, db: Session, symbol: str) -> PositionView:
         position = self._require_position(db, symbol)
         self._ensure_position_is_open(position)
+        self._mark_entry_filled_if_ready(db, position)
         position.tranches = [
             {**tranche, "stop": position.entry_price} if tranche["status"] == "active" else tranche
             for tranche in deepcopy(position.tranches)
@@ -362,15 +387,18 @@ class CockpitService:
         position = self._require_position(db, symbol)
         self._ensure_position_is_open(position)
         updated_tranches = []
+        broker_result = self.broker.close_position(position.symbol)
         for order in db.scalars(select(OrderEntity).where(OrderEntity.symbol == position.symbol)):
             if order.status in {"ACTIVE", "MODIFIED"}:
+                if order.broker_order_id:
+                    self.broker.cancel_order(order.broker_order_id)
                 order.status = "CANCELED"
         for tranche in deepcopy(position.tranches):
             if tranche["status"] == "active":
                 db.add(
                     OrderEntity(
                         order_id=self._next_order_id(db),
-                        broker_order_id=None,
+                        broker_order_id=broker_result.broker_order_id,
                         symbol=position.symbol,
                         type="MKT",
                         qty=tranche["qty"],
@@ -618,6 +646,34 @@ class CockpitService:
             return
         for order in stale_orders:
             order.status = "CANCELED"
+        db.flush()
+
+    def _cancel_broker_exit_orders(self, db: Session, symbol: str, order_types: set[str]) -> None:
+        active_orders = db.scalars(
+            select(OrderEntity).where(
+                OrderEntity.symbol == symbol,
+                OrderEntity.type.in_(list(order_types)),
+                OrderEntity.status.in_(["ACTIVE", "MODIFIED"]),
+            )
+        ).all()
+        for order in active_orders:
+            if order.broker_order_id:
+                self.broker.cancel_order(order.broker_order_id)
+            order.status = "CANCELED"
+        if active_orders:
+            db.flush()
+
+    def _mark_entry_filled_if_ready(self, db: Session, position: PositionEntity) -> None:
+        if position.phase != "entry_pending":
+            return
+        root_order = db.scalar(select(OrderEntity).where(OrderEntity.order_id == position.root_order_id))
+        if root_order is None:
+            return
+        position.phase = "trade_entered"
+        root_order.status = "FILLED"
+        root_order.filled_at = root_order.filled_at or utcnow()
+        root_order.fill_price = root_order.fill_price or position.entry_price
+        position.updated_at = utcnow()
         db.flush()
 
     def _require_position(self, db: Session, symbol: str) -> PositionEntity:

@@ -128,7 +128,7 @@ export function Cockpit() {
       }
 
       const openPositions = positionRows.filter((position) =>
-        ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase)
+        ["entry_pending", "trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase)
       );
       setAccount(accountView);
       setPositions(positionRows);
@@ -277,7 +277,7 @@ export function Cockpit() {
     if (initialAutoloadRef.current) return;
     if (!account) return;
     const hasActivePosition = positions.some((position) =>
-      ["trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase)
+      ["entry_pending", "trade_entered", "protected", "P1_done", "P2_done", "runner_only"].includes(position.phase)
     );
     if (setup || hasActivePosition || activeSymbolRef.current) {
       initialAutoloadRef.current = true;
