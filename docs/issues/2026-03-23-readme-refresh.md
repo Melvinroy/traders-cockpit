@@ -1,10 +1,10 @@
 # README Refresh
 
-> Status: In Progress
+> Status: Closed
 > Branch: `codex/refactor-readme-refresh`
 > Opened: 2026-03-23
-> Closed: -
-> Closing Commit: -
+> Closed: 2026-03-23
+> Closing Commit: `1ed5f09`
 
 ## Problem
 
