@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0f172a;
+  font-family: 'Segoe UI', sans-serif;
+  color: #e2e8f0;
+  padding: 28px 20px;
+}
+h1 { text-align: center; font-size: 17px; color: #f1f5f9; margin-bottom: 4px; }
+.sub { text-align: center; font-size: 11px; color: #64748b; margin-bottom: 24px; }
+
+/* layout */
+.diagram { display: flex; align-items: flex-start; justify-content: center; gap: 0; }
+.col { display: flex; flex-direction: column; align-items: center; }
+
+/* sections */
+.section {
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.fe  { border: 1px dashed #3b82f666; background: #1e3a5f1a; }
+.be  { border: 1px dashed #22c55e66; background: #1a3a2a1a; }
+.inf { border: 1px dashed #ef444466; background: #3b1f1f1a; }
+.ext { border: 1px dashed #a855f766; background: #2d1f3b1a; }
+.fe  .section-title { color: #3b82f6; }
+.be  .section-title { color: #22c55e; }
+.inf .section-title { color: #ef4444; }
+.ext .section-title { color: #a855f7; }
+
+/* boxes */
+.box {
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.4;
+  width: 100%;
+}
+.box span { font-size: 10px; font-weight: 400; display: block; margin-top: 2px; }
+.fe  .box { background: #1e3a5f; border: 1.5px solid #3b82f6; color: #93c5fd; }
+.be  .box { background: #1a3a2a; border: 1.5px solid #22c55e; color: #86efac; }
+.inf .box { background: #3b1f1f; border: 1.5px solid #ef4444; color: #fca5a5; }
+.ext .box { background: #2d1f3b; border: 1.5px solid #a855f7; color: #d8b4fe; }
+.ws-box    { background: #2d2010; border: 1.5px solid #f59e0b; color: #fcd34d; }
+
+/* arrows vertical */
+.av { display: flex; flex-direction: column; align-items: center; padding: 5px 0; }
+.av .lbl { font-size: 9px; color: #64748b; }
+.av .line { width: 1.5px; height: 18px; background: #334155; }
+.av .head { color: #475569; font-size: 11px; line-height: 1; }
+
+/* arrows horizontal */
+.ah { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 10px; gap: 3px; min-width: 80px; }
+.ah .lbl  { font-size: 9px; color: #64748b; text-align: center; white-space: nowrap; }
+.ah .line { height: 1.5px; background: #334155; width: 60px; }
+.ah .head { color: #475569; font-size: 13px; line-height: 1; }
+.ah .ws-lbl { font-size: 9px; color: #f59e0b; text-align: center; white-space: nowrap; }
+
+/* right col */
+.right-col { display: flex; flex-direction: column; gap: 14px; }
+
+/* lifecycle */
+.lifecycle { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; margin-top: 20px; }
+.lc-box { background: #1a3a2a; border: 1px solid #22c55e66; border-radius: 5px; padding: 4px 10px; font-size: 10px; color: #86efac; }
+.lc-arr { color: #22c55e88; font-size: 14px; }
+
+/* legend */
+.legend { display: flex; gap: 16px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+.li { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #94a3b8; }
+.ld { width: 10px; height: 10px; border-radius: 2px; }
+
+/* user box */
+.user { background: #1e293b; border: 1.5px solid #f59e0b; border-radius: 7px; padding: 6px 24px; font-size: 12px; font-weight: 600; color: #fcd34d; text-align: center; margin-bottom: 0; }
+</style>
+</head>
+<body>
+
+<h1>Traders Cockpit — Architecture</h1>
+<p class="sub">High-level component flow</p>
+
+<!-- USER -->
+<div class="col" style="margin-bottom:0">
+  <div class="user">👤 User Browser</div>
+  <div class="av"><div class="lbl">HTTP / WebSocket</div><div class="line"></div><div class="head">▼</div></div>
+</div>
+
+<!-- MAIN DIAGRAM ROW -->
+<div class="diagram">
+
+  <!-- FRONTEND -->
+  <div class="section fe" style="width:185px;">
+    <div class="section-title">Frontend · Next.js (3010)</div>
+    <div class="box">LoginPanel<span>Auth state · 401 guard</span></div>
+    <div class="av"><div class="lbl">on auth success</div><div class="line"></div><div class="head">▼</div></div>
+    <div class="box">Cockpit.tsx<span>Orchestrator · WS reconnect · Error banner</span></div>
+    <div class="av"><div class="lbl">props</div><div class="line"></div><div class="head">▼</div></div>
+    <div class="box">UI Panels<span>Setup · Entry · Stops · Profit · Log</span></div>
+    <div class="av"><div class="lbl">REST calls</div><div class="line"></div><div class="head">▼</div></div>
+    <div class="box">lib/api.ts<span>ApiError · login/logout · trade actions</span></div>
+  </div>
+
+  <!-- H arrows FE ↔ BE -->
+  <div class="ah" style="padding-top: 80px;">
+    <div class="lbl">REST ⇅</div>
+    <div style="display:flex; align-items:center; gap:4px;">
+      <div class="head" style="color:#475569">◀</div>
+      <div class="line"></div>
+      <div class="head" style="color:#475569">▶</div>
+    </div>
+    <div style="height:16px"></div>
+    <div class="ws-lbl">WS events ◀</div>
+    <div style="display:flex; align-items:center; gap:4px;">
+      <div class="head" style="color:#f59e0b88">◀</div>
+      <div class="line" style="background:#f59e0b44"></div>
+    </div>
+    <div class="ws-lbl" style="margin-top:4px">price_update</div>
+    <div class="ws-lbl">position_update</div>
+    <div class="ws-lbl">order_update</div>
+    <div class="ws-lbl">log_update</div>
+  </div>
+
+  <!-- BACKEND -->
+  <div class="section be" style="width:200px;">
+    <div class="section-title">Backend · FastAPI (8010)</div>
+    <div class="box">main.py<span>CORS · WS auth guard · /health</span></div>
+    <div class="av"><div class="lbl">routes</div><div class="line"></div><div class="head">▼</div></div>
+    <div class="box">API Routes<span>auth · account · market · positions · trade</span></div>
+    <div class="av"><div class="lbl">delegates logic</div><div class="line"></div><div class="head">▼</div></div>
+    <div class="box">CockpitService<span>Risk sizing · Trade lifecycle · Orders · Safety checks</span></div>
+    <div style="display:flex; gap:6px; margin-top:6px; width:100%">
+      <div style="flex:1">
+        <div class="av"><div class="lbl">quotes</div><div class="line"></div><div class="head">▼</div></div>
+        <div class="box" style="font-size:10px;">MarketData Adapter<span>Alpaca/Polygon · Fallback</span></div>
+      </div>
+      <div style="flex:1">
+        <div class="av"><div class="lbl">orders</div><div class="line"></div><div class="head">▼</div></div>
+        <div class="box" style="font-size:10px;">Broker Adapter<span>Paper sim · Alpaca · _fallback_or_raise</span></div>
+      </div>
+    </div>
+    <div class="av"><div class="lbl">pub/sub fanout</div><div class="line"></div><div class="head">▼</div></div>
+    <div class="box ws-box">WebSocketManager<span>Redis pub/sub · Local broadcast fallback</span></div>
+  </div>
+
+  <!-- H arrows BE → Infra/External -->
+  <div class="col" style="gap:30px; padding-top:70px; padding-left:4px; padding-right:4px;">
+    <div class="ah">
+      <div class="lbl">SQL →</div>
+      <div style="display:flex; align-items:center; gap:3px;">
+        <div class="line" style="width:40px"></div>
+        <div class="head">▶</div>
+      </div>
+    </div>
+    <div class="ah">
+      <div class="lbl">pub/sub →</div>
+      <div style="display:flex; align-items:center; gap:3px;">
+        <div class="line" style="width:40px"></div>
+        <div class="head">▶</div>
+      </div>
+    </div>
+    <div class="ah">
+      <div class="lbl">HTTP →</div>
+      <div style="display:flex; align-items:center; gap:3px;">
+        <div class="line" style="width:40px"></div>
+        <div class="head">▶</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Infra + External -->
+  <div class="right-col">
+    <div class="section inf" style="width:165px;">
+      <div class="section-title">Infrastructure</div>
+      <div class="box">PostgreSQL · 55432<span>Account · Position · Order · TradeLog</span></div>
+      <div class="av"><div class="lbl">Alembic migrations</div><div class="line"></div><div class="head">▼</div></div>
+      <div class="box">Redis · 56379<span>WS event pub/sub · Multi-instance fanout</span></div>
+    </div>
+
+    <div class="section ext" style="width:165px;">
+      <div class="section-title">External APIs</div>
+      <div class="box">Alpaca<span>Paper (default) · Live (guarded by token)</span></div>
+      <div class="av"><div class="lbl">quotes · roadmap</div><div class="line"></div><div class="head">▼</div></div>
+      <div class="box">Polygon<span>Technicals · RVOL · Days-to-cover</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- TRADE LIFECYCLE -->
+<div style="text-align:center; margin-top:22px; margin-bottom:8px;">
+  <div style="font-size:10px; font-weight:700; letter-spacing:1px; color:#22c55e; text-transform:uppercase; margin-bottom:8px;">Trade Lifecycle</div>
+  <div class="lifecycle">
+    <div class="lc-box">idle</div><div class="lc-arr">→</div>
+    <div class="lc-box">setup_loaded</div><div class="lc-arr">→</div>
+    <div class="lc-box">trade_entered</div><div class="lc-arr">→</div>
+    <div class="lc-box">protected</div><div class="lc-arr">→</div>
+    <div class="lc-box">P1 / P2 done</div><div class="lc-arr">→</div>
+    <div class="lc-box">runner_only</div><div class="lc-arr">→</div>
+    <div class="lc-box">closed</div>
+  </div>
+</div>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="li"><div class="ld" style="background:#3b82f6"></div> Frontend</div>
+  <div class="li"><div class="ld" style="background:#22c55e"></div> Backend</div>
+  <div class="li"><div class="ld" style="background:#ef4444"></div> Infrastructure</div>
+  <div class="li"><div class="ld" style="background:#a855f7"></div> External APIs</div>
+  <div class="li"><div class="ld" style="background:#f59e0b"></div> WebSocket events</div>
+  <div class="li"><div class="ld" style="background:#475569"></div> REST / SQL</div>
+</div>
+
+</body>
+</html>
