@@ -121,7 +121,7 @@ class Settings:
         default_db = (
             sqlite_fallback_url
             if app_env == "test" or allow_sqlite_fallback
-            else "postgresql://traders_cockpit:traders_cockpit@127.0.0.1:55432/traders_cockpit"
+            else "postgresql://traders_cockpit:change-me-postgres@127.0.0.1:55432/traders_cockpit"
         )
         return cls(
             app_env=app_env,

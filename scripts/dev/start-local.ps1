@@ -62,7 +62,7 @@ foreach ($entry in $profileEnv.GetEnumerator()) {
   }
   $backendRuntimeEnv[$entry.Key] = $entry.Value
 }
-$backendRuntimeEnv["DATABASE_URL"] = "postgresql://traders_cockpit:traders_cockpit@127.0.0.1:$PostgresPort/traders_cockpit"
+$backendRuntimeEnv["DATABASE_URL"] = "postgresql://traders_cockpit:change-me-postgres@127.0.0.1:$PostgresPort/traders_cockpit"
 $backendRuntimeEnv["REDIS_URL"] = "redis://127.0.0.1:$RedisPort/0"
 $backendRuntimeEnv["CORS_ORIGINS"] = "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:$FrontendPort,http://localhost:$FrontendPort,http://127.0.0.1:$FrontendProdPort,http://localhost:$FrontendProdPort"
 
