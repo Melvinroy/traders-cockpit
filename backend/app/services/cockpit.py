@@ -68,12 +68,22 @@ class CockpitService:
         account = db.scalar(select(AccountSettingsEntity))
         assert account is not None
         effective_mode = self._effective_account_mode(account.mode)
+        equity = account.equity
+        buying_power = account.buying_power
+        equity_source = "local_settings"
+        if effective_mode == "alpaca_paper":
+            broker_summary = self.broker.get_account_summary()
+            if broker_summary:
+                equity = broker_summary.get("equity", equity)
+                buying_power = broker_summary.get("buying_power", buying_power)
+                equity_source = "alpaca_account"
         return AccountSettingsView(
-            equity=account.equity,
-            buying_power=account.buying_power,
+            equity=equity,
+            buying_power=buying_power,
             risk_pct=account.risk_pct,
             mode=account.mode,
             effective_mode=effective_mode,
+            equity_source=equity_source,
             daily_realized_pnl=account.daily_realized_pnl,
             allow_live_trading=self.settings.allow_live_trading,
             max_position_notional_pct=self.settings.max_position_notional_pct,
@@ -103,13 +113,13 @@ class CockpitService:
     def get_setup(self, db: Session, symbol: str) -> SetupResponse:
         account = self.get_account(db)
         market = self.market_data.get_setup_data(symbol)
-        return self._build_setup_response(market, account.equity, account.risk_pct)
+        return self._build_setup_response(market, account.equity, account.buying_power, account.risk_pct, account.equity_source)
 
     def preview_trade(self, db: Session, payload: TradePreviewRequest) -> dict:
         setup = self.get_setup(db, payload.symbol)
         self._validate_stop(payload.entry, payload.stopPrice)
         per_share_risk = round(payload.entry - payload.stopPrice, 2)
-        shares = self._calculate_shares(setup.accountEquity, payload.riskPct, per_share_risk)
+        shares = self._calculate_shares(setup.accountEquity, setup.accountBuyingPower, payload.entry, payload.riskPct, per_share_risk)
         self._log(
             db,
             payload.symbol.upper(),
@@ -131,6 +141,8 @@ class CockpitService:
         setup = self.get_setup(db, symbol)
         self._validate_stop(payload.entry, payload.stopPrice)
         self._validate_tranche_modes(payload.trancheCount, payload.trancheModes)
+        if setup.shares <= 0:
+            raise ValueError("Calculated shares is zero for this setup. Increase risk or choose a tighter valid stop.")
         self._enforce_risk_checks(db, symbol, payload.entry, setup.shares)
         qtys = self._split_shares(setup.shares, payload.trancheCount)
         session_state = setup.sessionState
@@ -536,11 +548,24 @@ class CockpitService:
             ),
         )
 
-    def _build_setup_response(self, market: SetupMarketData, equity: float, risk_pct: float) -> SetupResponse:
+    def _build_setup_response(
+        self,
+        market: SetupMarketData,
+        equity: float,
+        buying_power: float,
+        risk_pct: float,
+        equity_source: str,
+    ) -> SetupResponse:
         entry = round((market.bid + market.ask) / 2, 2)
-        final_stop = market.lod
-        per_share_risk = round(max(0.01, entry - final_stop), 2)
-        shares = self._calculate_shares(equity, risk_pct, per_share_risk)
+        lod_stop = round(market.lod, 2)
+        atr_stop = round(max(0.01, entry - market.atr14), 2)
+        lod_is_valid = lod_stop < entry
+        atr_is_valid = 0 < atr_stop < entry
+        stop_reference_default = "lod" if lod_is_valid else "manual"
+        final_stop = lod_stop if lod_is_valid else 0.0
+        manual_stop_warning = None if lod_is_valid else "Low of day is above the current entry price. Enter a manual stop for this setup."
+        per_share_risk = round(entry - final_stop, 2) if lod_is_valid else 0.0
+        shares = self._calculate_shares(equity, buying_power, entry, risk_pct, per_share_risk)
         return SetupResponse(
             symbol=market.symbol,
             provider=market.provider,
@@ -554,8 +579,13 @@ class CockpitService:
             quoteTimestamp=market.quote_timestamp,
             sessionState=market.session_state,
             quoteState=market.quote_state,
-            entryBasis="bid_ask_midpoint",
-            stopReferenceDefault="lod",
+            entryBasis=market.entry_basis,
+            stopReferenceDefault=stop_reference_default,
+            lodIsValid=lod_is_valid,
+            atrIsValid=atr_is_valid,
+            lodStop=lod_stop,
+            atrStop=atr_stop,
+            manualStopWarning=manual_stop_warning,
             bid=market.bid,
             ask=market.ask,
             last=market.last,
@@ -571,22 +601,29 @@ class CockpitService:
             days_to_cover=market.days_to_cover,
             entry=entry,
             finalStop=final_stop,
-            r1=round(entry + per_share_risk, 2),
-            r2=round(entry + per_share_risk * 2, 2),
-            r3=round(entry + per_share_risk * 3, 2),
+            r1=round(entry + per_share_risk, 2) if per_share_risk > 0 else entry,
+            r2=round(entry + per_share_risk * 2, 2) if per_share_risk > 0 else entry,
+            r3=round(entry + per_share_risk * 3, 2) if per_share_risk > 0 else entry,
             shares=shares,
             dollarRisk=round(equity * (risk_pct / 100), 2),
             perShareRisk=per_share_risk,
             riskPct=risk_pct,
             accountEquity=equity,
+            accountBuyingPower=buying_power,
+            equitySource=equity_source,
             atrExtension=round((entry - market.sma50) / market.atr14, 2),
             extFrom10Ma=round(((entry - market.sma10) / market.sma10) * 100, 2),
         )
 
-    def _calculate_shares(self, equity: float, risk_pct: float, per_share_risk: float) -> int:
-        if per_share_risk <= 0:
+    def _calculate_shares(self, equity: float, buying_power: float, entry: float, risk_pct: float, per_share_risk: float) -> int:
+        if per_share_risk <= 0 or entry <= 0:
             return 0
-        return max(1, floor((equity * (risk_pct / 100)) / per_share_risk))
+        risk_budget = floor((equity * (risk_pct / 100)) / per_share_risk)
+        max_notional = equity * (self.settings.max_position_notional_pct / 100)
+        effective_notional_cap = min(buying_power, max_notional) if buying_power > 0 else max_notional
+        buying_power_cap = floor(effective_notional_cap / entry) if effective_notional_cap > 0 else 0
+        capped = min(risk_budget, buying_power_cap) if buying_power_cap > 0 else risk_budget
+        return max(0, capped)
 
     def _split_shares(self, shares: int, count: int) -> list[int]:
         if count <= 1:

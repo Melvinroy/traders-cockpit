@@ -84,7 +84,12 @@ class SetupResponse(BaseModel):
     sessionState: Literal["regular_open", "overnight", "pre_market", "after_hours", "closed"] = "closed"
     quoteState: Literal["live_quote", "cached_quote", "quote_unavailable"] = "quote_unavailable"
     entryBasis: str = "midpoint"
-    stopReferenceDefault: str = "lod"
+    stopReferenceDefault: Literal["lod", "atr", "manual"] = "lod"
+    lodIsValid: bool = True
+    atrIsValid: bool = True
+    lodStop: float
+    atrStop: float
+    manualStopWarning: str | None = None
     bid: float
     ask: float
     last: float
@@ -108,6 +113,8 @@ class SetupResponse(BaseModel):
     perShareRisk: float
     riskPct: float
     accountEquity: float
+    accountBuyingPower: float
+    equitySource: str = "local_settings"
     atrExtension: float
     extFrom10Ma: float
 
@@ -151,6 +158,7 @@ class AccountSettingsView(BaseModel):
     risk_pct: float
     mode: str
     effective_mode: str
+    equity_source: str = "local_settings"
     daily_realized_pnl: float
     allow_live_trading: bool
     max_position_notional_pct: float

@@ -5,13 +5,13 @@ type Props = {
   setup: SetupResponse | null;
   entryPrice: number;
   stopRef: "lod" | "atr" | "manual";
-  manualStop: number;
+  manualStop: number | null;
   offHoursMode: OffHoursMode;
   previewFlashing?: boolean;
   enterFlashing?: boolean;
   onEntryChange: (value: number) => void;
   onStopRefChange: (value: "lod" | "atr" | "manual") => void;
-  onManualStopChange: (value: number) => void;
+  onManualStopChange: (value: number | null) => void;
   onOffHoursModeChange: (value: OffHoursMode) => void;
   onPreview: () => void;
   onEnterTrade: () => void;
@@ -33,7 +33,7 @@ export function EntryPanel(props: Props) {
     onPreview,
     onEnterTrade
   } = props;
-  const stopPrice = stopRef === "manual" ? manualStop : setup?.finalStop ?? 0;
+  const stopPrice = stopRef === "manual" ? manualStop : stopRef === "atr" ? setup?.atrStop ?? null : setup?.lodStop ?? null;
   const isOffHours = Boolean(setup && setup.sessionState !== "regular_open");
 
   return (
@@ -63,8 +63,8 @@ export function EntryPanel(props: Props) {
               <div className="entry-v-divider" />
               <div className="stop-ref-wrap">
                 <div className="entry-toggle-group">
-                  <button type="button" className={`tranche-count-btn ${stopRef === "lod" ? "active" : ""}`} onClick={() => onStopRefChange("lod")}>LoD</button>
-                  <button type="button" className={`tranche-count-btn ${stopRef === "atr" ? "active" : ""}`} onClick={() => onStopRefChange("atr")}>ATR</button>
+                  <button type="button" className={`tranche-count-btn ${stopRef === "lod" ? "active" : ""}`} onClick={() => onStopRefChange("lod")} disabled={!setup?.lodIsValid}>LoD</button>
+                  <button type="button" className={`tranche-count-btn ${stopRef === "atr" ? "active" : ""}`} onClick={() => onStopRefChange("atr")} disabled={!setup?.atrIsValid}>ATR</button>
                   <button type="button" className={`tranche-count-btn ${stopRef === "manual" ? "active" : ""}`} onClick={() => onStopRefChange("manual")}>Manual</button>
                 </div>
                 <div className="manual-stop-wrap">
@@ -72,15 +72,21 @@ export function EntryPanel(props: Props) {
                   <input
                     type="number"
                     inputMode="decimal"
-                    value={manualStop}
+                    value={manualStop ?? ""}
                     className="manual-stop-input"
-                    onChange={(event) => onManualStopChange(Number(event.target.value))}
+                    onChange={(event) => onManualStopChange(event.target.value === "" ? null : Number(event.target.value))}
                     disabled={stopRef !== "manual"}
                   />
                 </div>
                 <span className="hero-stop-price">{fp(stopPrice)}</span>
               </div>
             </div>
+            {setup.manualStopWarning ? <div className="offhours-copy">{setup.manualStopWarning}</div> : null}
+            {setup ? (
+              <div className="offhours-copy">
+                Active stop source: {stopRef === "lod" ? `LoD ${fp(setup.lodStop)}` : stopRef === "atr" ? `ATR ${fp(setup.atrStop)}` : manualStop !== null ? `Manual ${fp(manualStop)}` : "Manual required"}
+              </div>
+            ) : null}
             <div className="entry-actions-row">
               <button type="button" className={`btn btn-ghost ${previewFlashing ? "flash" : ""}`} onClick={onPreview}>PREVIEW</button>
               <button type="button" className={`btn btn-cyan ${enterFlashing ? "flash" : ""}`} onClick={onEnterTrade}>{"\u2197"} ENTER TRADE</button>

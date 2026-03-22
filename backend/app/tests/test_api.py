@@ -24,7 +24,7 @@ from app.adapters.market_data import SetupMarketData  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app, service  # noqa: E402
-from app.models.entities import OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
+from app.models.entities import AccountSettingsEntity, OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
 from app.services.auth import get_auth_store  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
 from app.api import deps_auth  # noqa: E402
@@ -83,8 +83,13 @@ def test_setup_endpoint_returns_contract() -> None:
     assert isinstance(data["quoteIsReal"], bool)
     assert isinstance(data["technicalsAreFallback"], bool)
     assert data["entryBasis"] == "bid_ask_midpoint"
-    assert data["entry"] > data["finalStop"]
-    assert data["shares"] > 0
+    assert data["stopReferenceDefault"] in {"lod", "atr", "manual"}
+    assert isinstance(data["lodIsValid"], bool)
+    assert isinstance(data["atrIsValid"], bool)
+    assert "equitySource" in data
+    if data["stopReferenceDefault"] != "manual":
+        assert data["entry"] > data["finalStop"]
+        assert data["shares"] >= 0
 
 
 def test_postgres_urls_normalize_to_psycopg_driver() -> None:
@@ -137,6 +142,104 @@ def test_setup_fails_loudly_when_real_quote_is_unavailable() -> None:
     finally:
         service.settings.allow_controller_mock = original_allow_mock
         service.market_data.get_setup_data = original_get_setup_data
+
+
+def test_build_setup_defaults_to_manual_when_real_lod_is_invalid() -> None:
+    market = SetupMarketData(
+        symbol="AAPL",
+        provider="alpaca_market",
+        provider_state="real_quote_range_atr_fallback_technicals",
+        quote_provider="alpaca",
+        technicals_provider="mock",
+        quote_is_real=True,
+        technicals_are_fallback=True,
+        fallback_reason="partial_technicals_fallback_only",
+        quote_timestamp=None,
+        session_state="after_hours",
+        quote_state="cached_quote",
+        entry_basis="bid_ask_midpoint",
+        bid=101.00,
+        ask=101.20,
+        last=101.10,
+        lod=101.50,
+        hod=103.00,
+        prev_close=100.00,
+        atr14=2.25,
+        sma10=100.0,
+        sma50=95.0,
+        sma200=90.0,
+        sma200_prev=89.5,
+        rvol=1.2,
+        days_to_cover=2.0,
+    )
+    setup = service._build_setup_response(market, 50000.0, 200000.0, 1.0, "alpaca_account")
+    assert setup.stopReferenceDefault == "manual"
+    assert setup.lodIsValid is False
+    assert setup.manualStopWarning
+    assert setup.shares == 0
+    assert setup.finalStop == 0.0
+
+
+def test_build_setup_uses_real_lod_when_valid() -> None:
+    market = SetupMarketData(
+        symbol="AAPL",
+        provider="alpaca_market",
+        provider_state="real_quote_range_atr_fallback_technicals",
+        quote_provider="alpaca",
+        technicals_provider="mock",
+        quote_is_real=True,
+        technicals_are_fallback=True,
+        fallback_reason="partial_technicals_fallback_only",
+        quote_timestamp=None,
+        session_state="regular_open",
+        quote_state="live_quote",
+        entry_basis="bid_ask_midpoint",
+        bid=101.00,
+        ask=101.20,
+        last=101.10,
+        lod=98.00,
+        hod=103.00,
+        prev_close=100.00,
+        atr14=2.25,
+        sma10=100.0,
+        sma50=95.0,
+        sma200=90.0,
+        sma200_prev=89.5,
+        rvol=1.2,
+        days_to_cover=2.0,
+    )
+    setup = service._build_setup_response(market, 50000.0, 200000.0, 1.0, "alpaca_account")
+    assert setup.stopReferenceDefault == "lod"
+    assert setup.lodIsValid is True
+    assert setup.finalStop == 98.0
+    assert setup.atrStop == round(setup.entry - market.atr14, 2)
+    assert setup.shares > 0
+
+
+def test_get_account_uses_broker_equity_for_alpaca_paper_mode() -> None:
+    original_broker = service.broker
+    original_mode = service.settings.broker_mode
+
+    class StubBroker:
+        def get_account_summary(self) -> dict[str, float]:
+            return {"equity": 76543.21, "buying_power": 123456.78, "cash": 10000.0}
+
+    service.broker = StubBroker()
+    service.settings.broker_mode = "alpaca_paper"
+    try:
+        with SessionLocal() as db:
+            service.ensure_seed_data(db)
+            settings_row = db.scalar(select(AccountSettingsEntity))
+            assert settings_row is not None
+            settings_row.mode = "alpaca_paper"
+            db.commit()
+            account = service.get_account(db)
+        assert account.equity == 76543.21
+        assert account.buying_power == 123456.78
+        assert account.equity_source == "alpaca_account"
+    finally:
+        service.broker = original_broker
+        service.settings.broker_mode = original_mode
 
 
 def test_login_creates_session_and_me_resolves_user() -> None:
@@ -485,6 +588,7 @@ def test_setup_uses_cached_quote_metadata_when_alpaca_quote_is_off_hours() -> No
             quote_timestamp=fallback.quote_timestamp,
             session_state="closed",
             quote_state="cached_quote",
+            entry_basis=fallback.entry_basis,
             bid=fallback.bid,
             ask=fallback.ask,
             last=fallback.last,

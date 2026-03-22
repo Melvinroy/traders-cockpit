@@ -24,6 +24,50 @@ const DEFAULT_TRANCHE_MODES: TrancheMode[] = [
   { mode: "runner", trail: 2, trailUnit: "$", target: "3R", manualPrice: null }
 ];
 
+function effectiveStopPrice(setup: SetupResponse | null, stopRef: "lod" | "atr" | "manual", manualStop: number | null) {
+  if (!setup) return 0;
+  if (stopRef === "manual") return manualStop ?? 0;
+  return stopRef === "atr" ? setup.atrStop : setup.lodStop;
+}
+
+function deriveSetupForSelection(
+  setup: SetupResponse | null,
+  account: AccountView | null,
+  stopRef: "lod" | "atr" | "manual",
+  manualStop: number | null,
+  entryPrice: number
+) {
+  if (!setup) return null;
+  const equity = account?.equity ?? setup.accountEquity;
+  const buyingPower = account?.buying_power ?? setup.accountBuyingPower;
+  const riskPct = account?.risk_pct ?? setup.riskPct;
+  const stopPrice = stopRef === "manual" ? manualStop : stopRef === "atr" ? setup.atrStop : setup.lodStop;
+  const validStop = typeof stopPrice === "number" && Number.isFinite(stopPrice) && stopPrice > 0 && stopPrice < entryPrice;
+  const perShareRisk = validStop ? Number((entryPrice - stopPrice).toFixed(2)) : 0;
+  const dollarRisk = Number((equity * (riskPct / 100)).toFixed(2));
+  const maxNotionalCap = equity * ((account?.max_position_notional_pct ?? 100) / 100);
+  const effectiveNotionalCap = Math.min(buyingPower, maxNotionalCap);
+  const shares = validStop && entryPrice > 0
+    ? Math.max(0, Math.min(Math.floor(dollarRisk / perShareRisk), Math.floor(effectiveNotionalCap / entryPrice)))
+    : 0;
+
+  return {
+    ...setup,
+    entry: entryPrice,
+    stopReferenceDefault: stopRef,
+    finalStop: validStop ? stopPrice : 0,
+    perShareRisk,
+    dollarRisk,
+    shares,
+    riskPct,
+    accountEquity: equity,
+    accountBuyingPower: buyingPower,
+    r1: perShareRisk > 0 ? Number((entryPrice + perShareRisk).toFixed(2)) : entryPrice,
+    r2: perShareRisk > 0 ? Number((entryPrice + perShareRisk * 2).toFixed(2)) : entryPrice,
+    r3: perShareRisk > 0 ? Number((entryPrice + perShareRisk * 3).toFixed(2)) : entryPrice
+  };
+}
+
 export function Cockpit() {
   const [flashState, setFlashState] = useState<Record<string, number>>({});
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -37,7 +81,7 @@ export function Cockpit() {
   const [positions, setPositions] = useState<PositionView[]>([]);
   const [activeSymbol, setActiveSymbol] = useState("");
   const [entryPrice, setEntryPrice] = useState(0);
-  const [manualStop, setManualStop] = useState(0);
+  const [manualStop, setManualStop] = useState<number | null>(null);
   const [offHoursMode, setOffHoursMode] = useState<OffHoursMode>("queue_for_open");
   const [stopRef, setStopRef] = useState<"lod" | "atr" | "manual">("lod");
   const [stopMode, setStopMode] = useState(3);
@@ -55,10 +99,14 @@ export function Cockpit() {
     () => positions.find((position) => position.symbol === activeSymbol) ?? null,
     [positions, activeSymbol]
   );
+  const effectiveSetup = useMemo(
+    () => deriveSetupForSelection(setup, account, stopRef, manualStop, entryPrice || setup?.entry || 0),
+    [account, entryPrice, manualStop, setup, stopRef]
+  );
   const phase = activePosition?.phase ?? (setup ? "setup_loaded" : "idle");
-  const livePrice = activePosition?.livePrice ?? setup?.last ?? null;
-  const delta = livePrice !== null && setup ? livePrice - setup.entry : 0;
-  const deltaPct = livePrice !== null && setup ? ((livePrice - setup.entry) / setup.entry) * 100 : 0;
+  const livePrice = activePosition?.livePrice ?? effectiveSetup?.last ?? null;
+  const delta = livePrice !== null && effectiveSetup ? livePrice - effectiveSetup.entry : 0;
+  const deltaPct = livePrice !== null && effectiveSetup ? ((livePrice - effectiveSetup.entry) / effectiveSetup.entry) * 100 : 0;
 
   useEffect(() => {
     activeSymbolRef.current = activeSymbol;
@@ -105,7 +153,8 @@ export function Cockpit() {
       setTicker(position.symbol);
       setSetup(position.setup as SetupResponse);
       setEntryPrice(position.setup.entry);
-      setManualStop(position.setup.finalStop);
+      setStopRef((position.setup.stopReferenceDefault as "lod" | "atr" | "manual") ?? "lod");
+      setManualStop(position.setup.stopReferenceDefault === "manual" ? null : position.setup.finalStop);
       setOffHoursMode("queue_for_open");
       setStopMode(position.stopMode || 3);
       setStopModes(position.stopModes.length ? position.stopModes : DEFAULT_STOP_MODES);
@@ -265,7 +314,8 @@ export function Cockpit() {
     setupLoadedRef.current = true;
     setSetup(nextSetup);
     setEntryPrice(nextSetup.entry);
-    setManualStop(nextSetup.finalStop);
+    setStopRef(nextSetup.stopReferenceDefault);
+    setManualStop(nextSetup.stopReferenceDefault === "manual" ? null : nextSetup.finalStop);
     setActiveSymbol("");
     setStopMode(3);
     setStopModes(DEFAULT_STOP_MODES);
@@ -302,7 +352,8 @@ export function Cockpit() {
         const nextSetup = await api.getSetup(ticker);
         setSetup(nextSetup);
         setEntryPrice(nextSetup.entry);
-        setManualStop(nextSetup.finalStop);
+        setStopRef(nextSetup.stopReferenceDefault);
+        setManualStop(nextSetup.stopReferenceDefault === "manual" ? null : nextSetup.finalStop);
       }
       await hydrate({ autoSelectFirst: false });
       setRuntimeError(null);
@@ -314,12 +365,16 @@ export function Cockpit() {
 
   async function previewTrade() {
     if (!setup) return;
+    if (stopRef === "manual" && (!manualStop || manualStop <= 0)) {
+      setRuntimeError("Enter a valid manual stop price.");
+      return;
+    }
     try {
       await api.previewTrade({
         symbol: ticker,
         entry: entryPrice,
         stopRef,
-        stopPrice: stopRef === "manual" ? manualStop : setup.finalStop,
+        stopPrice: effectiveStopPrice(setup, stopRef, manualStop),
         riskPct: account?.risk_pct ?? setup.riskPct
       });
       await hydrate({ autoSelectFirst: false });
@@ -333,12 +388,16 @@ export function Cockpit() {
 
   async function enterTrade() {
     if (!setup) return;
+    if (stopRef === "manual" && (!manualStop || manualStop <= 0)) {
+      setRuntimeError("Enter a valid manual stop price.");
+      return;
+    }
     try {
       const position = await api.enterTrade({
         symbol: ticker,
         entry: entryPrice,
         stopRef,
-        stopPrice: stopRef === "manual" ? manualStop : setup.finalStop,
+        stopPrice: effectiveStopPrice(setup, stopRef, manualStop),
         trancheCount,
         trancheModes,
         offHoursMode: setup.sessionState === "regular_open" ? null : offHoursMode
@@ -481,7 +540,8 @@ export function Cockpit() {
           setActiveSymbol("");
           setTicker("");
           setEntryPrice(0);
-          setManualStop(0);
+          setManualStop(null);
+          setStopRef("lod");
           setOffHoursMode("queue_for_open");
           setStopMode(3);
           setStopModes(DEFAULT_STOP_MODES);
@@ -504,17 +564,17 @@ export function Cockpit() {
       <div className="workspace">
         <SetupPanel
           symbol={activeSymbol || ticker}
-          setup={setup}
+          setup={effectiveSetup}
           account={account}
           positions={positions}
           onSelectPosition={selectPosition}
           onRiskPctCommit={(value) => void commitRiskPct(value)}
         />
         <EntryPanel
-          setup={setup}
-          entryPrice={entryPrice || setup?.entry || 0}
+          setup={effectiveSetup}
+          entryPrice={entryPrice || effectiveSetup?.entry || 0}
           stopRef={stopRef}
-          manualStop={manualStop || setup?.finalStop || 0}
+          manualStop={manualStop}
           offHoursMode={offHoursMode}
           previewFlashing={Boolean(flashState.preview)}
           enterFlashing={Boolean(flashState.enter)}
@@ -526,7 +586,7 @@ export function Cockpit() {
           onEnterTrade={() => void enterTrade()}
         />
         <StopProtectionPanel
-          setup={setup}
+          setup={effectiveSetup}
           phase={activePosition?.phase ?? null}
           stopMode={stopMode}
           stopModes={stopModes}
@@ -544,7 +604,7 @@ export function Cockpit() {
           onFlatten={() => void flatten()}
         />
         <ProfitTakingPanel
-          setup={setup}
+          setup={effectiveSetup}
           activePosition={activePosition}
           trancheCount={trancheCount}
           trancheModes={trancheModes}

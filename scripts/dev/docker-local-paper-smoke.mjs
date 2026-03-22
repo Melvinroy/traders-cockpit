@@ -90,6 +90,15 @@ try {
   if (!setup.sessionState || !setup.quoteState) {
     throw new Error("Setup response is missing sessionState/quoteState metadata.");
   }
+  if (typeof setup.lod !== "number" || typeof setup.atr14 !== "number" || setup.atr14 <= 0) {
+    throw new Error("Setup response is missing real LoD/ATR values.");
+  }
+  if (!["lod", "manual"].includes(setup.stopReferenceDefault)) {
+    throw new Error(`Unexpected default stop reference ${setup.stopReferenceDefault}`);
+  }
+  if (typeof setup.accountEquity !== "number" || setup.accountEquity <= 0 || setup.equitySource !== "alpaca_account") {
+    throw new Error("Setup sizing is not using broker-backed equity.");
+  }
 
   const enter = await fetchJson("/api/trade/enter", {
     method: "POST",

@@ -24,7 +24,7 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
     ? `${setup.quoteIsReal ? "Real quote" : "Quote unavailable"} via ${setup.quoteProvider} | execution ${setup.executionProvider}`
     : "";
   const providerSubnote = setup?.technicalsAreFallback
-    ? "Derived metrics are still fallback-backed locally."
+    ? "LoD and ATR are real via Alpaca. Remaining derived metrics are still fallback-backed locally."
     : "All displayed setup fields are provider-backed.";
   const quoteTimestamp = setup?.quoteTimestamp ? formatQuoteTimestamp(setup.quoteTimestamp) : "--";
 
@@ -62,8 +62,10 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
               <div className="provider-subnote">
                 Session: {setup ? sessionStateLabel(setup.sessionState) : "--"} | Quote state: {setup?.quoteState ?? "--"}
               </div>
+              <div className="provider-subnote">Entry basis: {setup.entryBasis.replaceAll("_", " ")}</div>
               <div className="provider-subnote">Using latest available Alpaca quote from {quoteTimestamp}</div>
               <div className="provider-subnote">{providerSubnote}</div>
+              {setup?.manualStopWarning ? <div className="provider-subnote">{setup.manualStopWarning}</div> : null}
               {setup.fallbackReason ? <div className="provider-subnote">Fallback reason: {setup.fallbackReason}</div> : null}
             </div>
             <div className="kv-group">
@@ -80,12 +82,20 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
                 <span className="kv-label">Final Stop</span>
                 <span className="kv-val red">{fp(setup.finalStop)}</span>
               </div>
+              <div className="kv-row">
+                <span className="kv-label">Stop Default</span>
+                <span className="kv-val">{setup.stopReferenceDefault.toUpperCase()}</span>
+              </div>
             </div>
             <div className="kv-group">
               <div className="kv-group-label">Risk Sizing</div>
               <div className="kv-row">
                 <span className="kv-label">Account Equity</span>
                 <span className="kv-val">{fp(account?.equity ?? setup.accountEquity)}</span>
+              </div>
+              <div className="kv-row">
+                <span className="kv-label">Buying Power</span>
+                <span className="kv-val">{fp(account?.buying_power ?? setup.accountBuyingPower)}</span>
               </div>
               <div className="kv-row">
                 <span className="kv-label">Risk %</span>
@@ -122,6 +132,7 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
                 <span className="kv-label">Calc. Shares</span>
                 <span className="kv-val green">{setup.shares} sh</span>
               </div>
+              <div className="provider-subnote">Sizing uses {setup.equitySource === "alpaca_account" ? "real Alpaca account equity and buying power" : "local account settings"}.</div>
             </div>
             <div className="kv-group">
               <div className="kv-group-label">Reference</div>

@@ -51,7 +51,12 @@ export type SetupResponse = {
   sessionState: "regular_open" | "overnight" | "pre_market" | "after_hours" | "closed";
   quoteState: "live_quote" | "cached_quote" | "quote_unavailable";
   entryBasis: string;
-  stopReferenceDefault: string;
+  stopReferenceDefault: "lod" | "atr" | "manual";
+  lodIsValid: boolean;
+  atrIsValid: boolean;
+  lodStop: number;
+  atrStop: number;
+  manualStopWarning?: string | null;
   bid: number;
   ask: number;
   last: number;
@@ -75,6 +80,8 @@ export type SetupResponse = {
   perShareRisk: number;
   riskPct: number;
   accountEquity: number;
+  accountBuyingPower: number;
+  equitySource: string;
   atrExtension: number;
   extFrom10Ma: number;
 };
@@ -101,6 +108,7 @@ export type AccountView = {
   risk_pct: number;
   mode: string;
   effective_mode: string;
+  equity_source: string;
   daily_realized_pnl: number;
   allow_live_trading: boolean;
   max_position_notional_pct: number;

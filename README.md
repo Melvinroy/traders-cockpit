@@ -49,7 +49,28 @@ See:
 
 ### Recommended Local Bootstrap
 
-For real local Alpaca paper trading, Docker + localhost is the canonical runtime:
+For day-to-day prototyping, use the hybrid local path:
+
+```powershell
+Copy-Item .env.personal-paper.example .env.personal-paper.local
+.\scripts\dev\start-hybrid-local-personal-paper.ps1
+```
+
+This starts:
+
+- Frontend locally on `3010`
+- Backend locally on `8010`
+- PostgreSQL in Docker on `55432`
+- Redis in Docker on `56379`
+
+Why this is the default development path:
+
+- much faster frontend/backend iteration
+- real Alpaca paper quote and execution path
+- same local Postgres/Redis persistence model
+- no full Docker image rebuild on each code change
+
+Use the full Docker-local path as the slower validation/signoff runtime:
 
 ```powershell
 Copy-Item .env.personal-paper.example .env.personal-paper.local
@@ -88,10 +109,22 @@ To stop the Docker-local personal-paper stack:
 .\scripts\dev\stop-docker-local-personal-paper.ps1
 ```
 
+To stop the hybrid local personal-paper stack:
+
+```powershell
+.\scripts\dev\stop-hybrid-local-personal-paper.ps1
+```
+
 To run the real Docker-local paper smoke flow:
 
 ```powershell
 .\scripts\dev\run-docker-local-paper-smoke.ps1 -StartStack -Build
+```
+
+To run the fast hybrid-local paper smoke flow:
+
+```powershell
+.\scripts\dev\run-hybrid-local-paper-smoke.ps1 -StartStack
 ```
 
 To validate and QC the script-driven personal-paper profile explicitly:
@@ -155,7 +188,7 @@ Copy `.env.example` to `.env` at the repo root and fill only the values you need
 Important defaults:
 
 - paper mode first for deterministic tests
-- Docker-local personal-paper mode is the primary runtime for real usage; hosted deploys come after local validation
+- hybrid local personal-paper mode is the primary development runtime; Docker-local personal-paper is the validation/signoff runtime
 - live mode disabled unless explicitly allowed
 - local session auth enabled by default
 - staged/hosted deployments should use `AUTH_COOKIE_SAMESITE=none` and `AUTH_COOKIE_SECURE=true` so the hosted frontend can authenticate against a separate backend origin

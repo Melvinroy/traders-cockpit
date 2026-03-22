@@ -42,6 +42,9 @@ class BrokerAdapter:
     def get_session_state(self) -> str:
         raise NotImplementedError
 
+    def get_account_summary(self) -> dict[str, float] | None:
+        raise NotImplementedError
+
 
 class PaperBrokerAdapter(BrokerAdapter):
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
@@ -69,6 +72,9 @@ class PaperBrokerAdapter(BrokerAdapter):
 
     def get_session_state(self) -> str:
         return "regular_open"
+
+    def get_account_summary(self) -> dict[str, float] | None:
+        return None
 
 
 class AlpacaBrokerAdapter(BrokerAdapter):
@@ -301,3 +307,27 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             if self.settings.allow_controller_mock:
                 return "regular_open"
             raise ValueError(self._extract_http_error_message("Alpaca market clock lookup failed", exc)) from exc
+
+    def get_account_summary(self) -> dict[str, float] | None:
+        if not self.settings.has_alpaca_credentials:
+            if self.settings.allow_controller_mock:
+                return None
+            raise ValueError("Alpaca paper credentials are missing for broker account lookup")
+        try:
+            with self._client() as client:
+                response = client.get("/v2/account")
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPError as exc:
+            if self.settings.allow_controller_mock:
+                return None
+            raise ValueError(self._extract_http_error_message("Alpaca account lookup failed", exc)) from exc
+        try:
+            equity = float(payload.get("equity") or 0.0)
+            buying_power = float(payload.get("buying_power") or 0.0)
+            cash = float(payload.get("cash") or 0.0)
+        except (TypeError, ValueError):
+            return None
+        if equity <= 0 or buying_power <= 0:
+            return None
+        return {"equity": equity, "buying_power": buying_power, "cash": cash}
