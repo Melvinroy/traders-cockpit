@@ -2,6 +2,8 @@ import type { LogEntry } from "@/lib/types";
 import { formatLogTime } from "@/lib/cockpit-ui";
 
 export function ActivityLog({ logs, onClear, clearFlashing = false }: { logs: LogEntry[]; onClear: () => void; clearFlashing?: boolean }) {
+  const visibleLogs = logs.slice(0, 80);
+
   return (
     <div className="panel log-panel">
       <div className="panel-header">
@@ -9,8 +11,8 @@ export function ActivityLog({ logs, onClear, clearFlashing = false }: { logs: Lo
         <button type="button" className={`btn btn-ghost log-clear-btn ${clearFlashing ? "flash" : ""}`} onClick={onClear}>CLR</button>
       </div>
       <div className="log-body">
-        {logs.length ? (
-          logs.map((entry) => (
+        {visibleLogs.length ? (
+          visibleLogs.map((entry) => (
             <div className="log-entry" key={entry.id}>
               <div className="log-time">{formatLogTime(entry.created_at)}</div>
               <div className="log-msg">

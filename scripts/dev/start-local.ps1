@@ -14,6 +14,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Get-RepoRoot
 $backendDir = Join-Path $repoRoot "backend"
 $frontendDir = Join-Path $repoRoot "frontend"
+$frontendNextCacheDir = Join-Path $frontendDir ".next\\cache"
 $backendOut = Join-Path $repoRoot "backend.out.log"
 $backendErr = Join-Path $repoRoot "backend.err.log"
 $frontendOut = Join-Path $repoRoot "frontend.out.log"
@@ -116,6 +117,10 @@ Invoke-RestMethod `
   -ContentType "application/json" `
   -Body $accountBody `
   -WebSession $authSession | Out-Null
+
+if (Test-Path $frontendNextCacheDir) {
+  Remove-Item -Path $frontendNextCacheDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $frontendCmd = @(
   "set ""NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:$BackendPort""",

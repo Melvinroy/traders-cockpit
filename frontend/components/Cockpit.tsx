@@ -24,6 +24,8 @@ const DEFAULT_TRANCHE_MODES: TrancheMode[] = [
   { mode: "runner", trail: 2, trailUnit: "$", target: "3R", manualPrice: null }
 ];
 
+const MAX_LOG_ENTRIES = 120;
+
 function effectiveStopPrice(setup: SetupResponse | null, stopRef: "lod" | "atr" | "manual", manualStop: number | null) {
   if (!setup) return 0;
   if (stopRef === "manual") return manualStop ?? 0;
@@ -217,6 +219,7 @@ export function Cockpit() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setAuthUser(null);
+        setAuthRequired(true);
         return null;
       }
       throw error;
@@ -234,15 +237,15 @@ export function Cockpit() {
 
   useEffect(() => {
     void (async () => {
-      const hydrated = await hydrate({ autoSelectFirst: true });
-      if (hydrated) {
-        await loadSession();
+      const user = await loadSession();
+      if (user) {
+        await hydrate({ autoSelectFirst: true });
       }
     })();
   }, [hydrate, loadSession]);
 
   useEffect(() => {
-    if (authRequired) return;
+    if (authRequired || !authUser) return;
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:8010/ws/cockpit";
     let disposed = false;
     let reconnectDelay = 1000;
@@ -266,12 +269,37 @@ export function Cockpit() {
             current.map((position) =>
               position.symbol === payload.symbol
                 ? { ...position, livePrice: Number(payload.last ?? position.livePrice) }
+              : position
+            )
+          );
+        }
+        if (payload.type === "position_update" && payload.position && typeof payload.symbol === "string") {
+          const nextPosition = payload.position as PositionView;
+          setPositions((current) => {
+            const next = current.some((position) => position.symbol === nextPosition.symbol)
+              ? current.map((position) => (position.symbol === nextPosition.symbol ? nextPosition : position))
+              : [nextPosition, ...current];
+            return next;
+          });
+          if (activeSymbolRef.current === nextPosition.symbol) {
+            applyPositionState(nextPosition);
+          }
+        }
+        if (payload.type === "order_update" && Array.isArray(payload.orders) && typeof payload.symbol === "string") {
+          setPositions((current) =>
+            current.map((position) =>
+              position.symbol === payload.symbol
+                ? { ...position, orders: payload.orders as PositionView["orders"] }
                 : position
             )
           );
         }
-        if (payload.type === "position_update" || payload.type === "order_update" || payload.type === "log_update") {
-          void hydrate({ autoSelectFirst: Boolean(activeSymbolRef.current) });
+        if (payload.type === "log_update" && payload.log) {
+          const nextLog = payload.log as LogEntry;
+          setLogs((current) => {
+            const deduped = current.filter((entry) => entry.id !== nextLog.id);
+            return [nextLog, ...deduped].slice(0, MAX_LOG_ENTRIES);
+          });
         }
       };
       ws.onerror = () => {
@@ -282,7 +310,9 @@ export function Cockpit() {
           wsRef.current = null;
         }
         if (disposed) return;
-        setRuntimeError("Realtime connection lost. Reconnecting...");
+        if (ws.readyState !== WebSocket.OPEN) {
+          setRuntimeError("Realtime connection lost. Reconnecting...");
+        }
         reconnectTimerRef.current = window.setTimeout(() => {
           reconnectDelay = Math.min(reconnectDelay * 2, 5000);
           connect();
@@ -300,7 +330,7 @@ export function Cockpit() {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [authRequired, hydrate]);
+  }, [applyPositionState, authRequired, authUser, hydrate]);
 
   const loadSetup = useCallback(async () => {
     let nextSetup: SetupResponse;
