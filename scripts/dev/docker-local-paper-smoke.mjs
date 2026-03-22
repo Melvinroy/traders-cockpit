@@ -87,6 +87,9 @@ try {
   if (setup.executionProvider !== "alpaca_paper") {
     throw new Error(`Expected alpaca_paper execution, got ${setup.executionProvider}`);
   }
+  if (!setup.sessionState || !setup.quoteState) {
+    throw new Error("Setup response is missing sessionState/quoteState metadata.");
+  }
 
   const enter = await fetchJson("/api/trade/enter", {
     method: "POST",
@@ -97,6 +100,7 @@ try {
       stopRef: "lod",
       stopPrice: setup.finalStop,
       trancheCount: 3,
+      offHoursMode: setup.sessionState === "regular_open" ? null : "queue_for_open",
       trancheModes: [
         { mode: "limit", trail: 2, trailUnit: "$", target: "1R", manualPrice: null },
         { mode: "limit", trail: 2, trailUnit: "$", target: "2R", manualPrice: null },

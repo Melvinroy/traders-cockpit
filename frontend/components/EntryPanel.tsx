@@ -1,16 +1,18 @@
-import { fp } from "@/lib/cockpit-ui";
-import type { SetupResponse } from "@/lib/types";
+import { fp, sessionStateLabel } from "@/lib/cockpit-ui";
+import type { OffHoursMode, SetupResponse } from "@/lib/types";
 
 type Props = {
   setup: SetupResponse | null;
   entryPrice: number;
   stopRef: "lod" | "atr" | "manual";
   manualStop: number;
+  offHoursMode: OffHoursMode;
   previewFlashing?: boolean;
   enterFlashing?: boolean;
   onEntryChange: (value: number) => void;
   onStopRefChange: (value: "lod" | "atr" | "manual") => void;
   onManualStopChange: (value: number) => void;
+  onOffHoursModeChange: (value: OffHoursMode) => void;
   onPreview: () => void;
   onEnterTrade: () => void;
 };
@@ -21,15 +23,18 @@ export function EntryPanel(props: Props) {
     entryPrice,
     stopRef,
     manualStop,
+    offHoursMode,
     previewFlashing = false,
     enterFlashing = false,
     onEntryChange,
     onStopRefChange,
     onManualStopChange,
+    onOffHoursModeChange,
     onPreview,
     onEnterTrade
   } = props;
   const stopPrice = stopRef === "manual" ? manualStop : setup?.finalStop ?? 0;
+  const isOffHours = Boolean(setup && setup.sessionState !== "regular_open");
 
   return (
     <div className="panel entry-panel">
@@ -80,6 +85,31 @@ export function EntryPanel(props: Props) {
               <button type="button" className={`btn btn-ghost ${previewFlashing ? "flash" : ""}`} onClick={onPreview}>PREVIEW</button>
               <button type="button" className={`btn btn-cyan ${enterFlashing ? "flash" : ""}`} onClick={onEnterTrade}>{"\u2197"} ENTER TRADE</button>
             </div>
+            {isOffHours ? (
+              <div className="offhours-box">
+                <div className="offhours-eyebrow">Alpaca Off-Hours Entry</div>
+                <div className="offhours-copy">
+                  Session: {sessionStateLabel(setup.sessionState)}. Standard market orders queue for the next regular
+                  session. Extended-hours submission is limit-only and uses the current entry price.
+                </div>
+                <div className="offhours-toggle-group">
+                  <button
+                    type="button"
+                    className={`tranche-count-btn ${offHoursMode === "queue_for_open" ? "active" : ""}`}
+                    onClick={() => onOffHoursModeChange("queue_for_open")}
+                  >
+                    Queue For Open
+                  </button>
+                  <button
+                    type="button"
+                    className={`tranche-count-btn ${offHoursMode === "extended_hours_limit" ? "active" : ""}`}
+                    onClick={() => onOffHoursModeChange("extended_hours_limit")}
+                  >
+                    Submit Extended-Hours Limit
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

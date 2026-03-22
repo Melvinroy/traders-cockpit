@@ -48,6 +48,8 @@ export type SetupResponse = {
   technicalsAreFallback: boolean;
   fallbackReason?: string | null;
   quoteTimestamp?: string | null;
+  sessionState: "regular_open" | "overnight" | "pre_market" | "after_hours" | "closed";
+  quoteState: "live_quote" | "cached_quote" | "quote_unavailable";
   entryBasis: string;
   stopReferenceDefault: string;
   bid: number;
@@ -90,6 +92,8 @@ export type PositionView = {
   stopMode: number;
   trancheCount: number;
 };
+
+export type OffHoursMode = "queue_for_open" | "extended_hours_limit";
 
 export type AccountView = {
   equity: number;

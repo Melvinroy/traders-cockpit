@@ -39,6 +39,21 @@ export function formatLogTime(value: string): string {
   });
 }
 
+export function formatQuoteTimestamp(value: string | null | undefined): string {
+  if (!value) return "\u2014";
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+}
+
+export function sessionStateLabel(value: string | null | undefined): string {
+  return value ? value.replaceAll("_", " ") : "\u2014";
+}
+
 export function phaseLabel(phase: string): string {
   return PHASE_LABELS[phase] ?? phase.replaceAll("_", " ").toUpperCase();
 }

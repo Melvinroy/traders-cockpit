@@ -3,6 +3,7 @@ import type { OrderView, SetupResponse, StopMode, Tranche } from "@/lib/types";
 
 type Props = {
   setup: SetupResponse | null;
+  phase: string | null;
   stopMode: number;
   stopModes: StopMode[];
   tranches: Tranche[];
@@ -20,6 +21,7 @@ type Props = {
 export function StopProtectionPanel(props: Props) {
   const {
     setup,
+    phase,
     stopMode,
     stopModes,
     tranches,
@@ -36,10 +38,13 @@ export function StopProtectionPanel(props: Props) {
   const rows = stopPlanRows(setup, tranches, stopMode, stopModes, orders);
   const hasSetup = Boolean(setup);
   const hasTrade = tranches.length > 0;
+  const waitingForFill = phase === "entry_pending";
   const stopModeLabel = !hasSetup
     ? ""
     : !hasTrade
-      ? "NOT SET"
+      ? waitingForFill
+        ? "WAITING FOR FILL"
+        : "NOT SET"
       : stopMode === 1
         ? "S1"
         : stopMode === 2
@@ -52,16 +57,16 @@ export function StopProtectionPanel(props: Props) {
         <div className="panel-title">Stop Protection</div>
         <div className="protect-controls">
           <span className="protect-caption">STOPS</span>
-          <button type="button" className={`tranche-count-btn ${stopMode === 1 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(1)}>S1</button>
-          <button type="button" className={`tranche-count-btn ${stopMode === 2 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(2)}>S1{"\u00B7"}S2</button>
-          <button type="button" className={`tranche-count-btn ${stopMode === 3 ? "active" : ""}`} disabled={!hasTrade} onClick={() => onStopModeChange(3)}>S1{"\u00B7"}S2{"\u00B7"}S3</button>
-          <button type="button" className={`stop-ok-btn ${hasTrade ? "stop-ok-ready" : ""} ${executeFlashing ? "flash" : ""}`} disabled={!hasTrade} onClick={onExecute}>EXECUTE</button>
+          <button type="button" className={`tranche-count-btn ${stopMode === 1 ? "active" : ""}`} disabled={!hasTrade || waitingForFill} onClick={() => onStopModeChange(1)}>S1</button>
+          <button type="button" className={`tranche-count-btn ${stopMode === 2 ? "active" : ""}`} disabled={!hasTrade || waitingForFill} onClick={() => onStopModeChange(2)}>S1{"\u00B7"}S2</button>
+          <button type="button" className={`tranche-count-btn ${stopMode === 3 ? "active" : ""}`} disabled={!hasTrade || waitingForFill} onClick={() => onStopModeChange(3)}>S1{"\u00B7"}S2{"\u00B7"}S3</button>
+          <button type="button" className={`stop-ok-btn ${hasTrade && !waitingForFill ? "stop-ok-ready" : ""} ${executeFlashing ? "flash" : ""}`} disabled={!hasTrade || waitingForFill} onClick={onExecute}>EXECUTE</button>
           <div className="stop-mode-label">{stopModeLabel}</div>
         </div>
       </div>
       <div className="stop-plan-shell">
         <div className="section-label stop-plan-title">
-          Stop Plan <span className="section-hint">{hasTrade ? "" : hasSetup ? "\u2014 Enter trade first" : ""}</span>
+          Stop Plan <span className="section-hint">{waitingForFill ? "\u2014 Protective orders are unavailable until the entry order is filled" : hasTrade ? "" : hasSetup ? "\u2014 Enter trade first" : ""}</span>
         </div>
         <div className="stop-plan-content">
           {!hasSetup ? null : rows.map((row, index) => {
@@ -81,6 +86,7 @@ export function StopProtectionPanel(props: Props) {
                   type="button"
                   className={`mode-toggle ${isBreakeven ? "runner" : "limit"}`}
                   onClick={() => onStopModeValueChange(index, { ...mode, mode: isBreakeven ? "stop" : "be" })}
+                  disabled={waitingForFill}
                 >
                   {isBreakeven ? "BE" : "STOP"}
                 </button>
@@ -90,7 +96,7 @@ export function StopProtectionPanel(props: Props) {
                     inputMode="decimal"
                     className="pct-input"
                     value={Number((mode.pct ?? row.pct).toFixed(2))}
-                    disabled={isBreakeven}
+                    disabled={isBreakeven || waitingForFill}
                     onChange={(event) => onStopModeValueChange(index, { ...mode, pct: Number(event.target.value) })}
                   />
                   <span className="pct-suffix">%</span>
@@ -109,7 +115,7 @@ export function StopProtectionPanel(props: Props) {
         </div>
       </div>
       <div className="panel-body protect-actions">
-        <button type="button" className={`btn btn-ghost ${moveToBeFlashing ? "flash" : ""}`} disabled={!hasTrade} onClick={onMoveToBe}>ALL {"\u2192"} BE</button>
+        <button type="button" className={`btn btn-ghost ${moveToBeFlashing ? "flash" : ""}`} disabled={!hasTrade || waitingForFill} onClick={onMoveToBe}>ALL {"\u2192"} BE</button>
         <button type="button" className={`btn btn-red ${flattenFlashing ? "flash" : ""}`} disabled={!hasTrade} onClick={onFlatten}>{"\u2B1B"} FLATTEN</button>
       </div>
     </div>

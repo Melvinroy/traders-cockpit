@@ -133,12 +133,52 @@ class CockpitService:
         self._validate_tranche_modes(payload.trancheCount, payload.trancheModes)
         self._enforce_risk_checks(db, symbol, payload.entry, setup.shares)
         qtys = self._split_shares(setup.shares, payload.trancheCount)
-        broker = self.broker.place_market_order(symbol, setup.shares, "buy")
-        entry_filled = True
-        try:
-            self.broker.wait_for_position(symbol, min_qty=setup.shares, timeout_seconds=5.0)
-        except ValueError:
-            entry_filled = False
+        session_state = setup.sessionState
+        enforce_alpaca_offhours = setup.executionProvider == "alpaca_paper"
+        entry_message: str
+        broker_status = "PENDING"
+        root_order_type = "MKT"
+        if session_state == "regular_open" or not enforce_alpaca_offhours:
+            broker = self.broker.place_market_order(symbol, setup.shares, "buy")
+            entry_filled = True
+            try:
+                self.broker.wait_for_position(symbol, min_qty=setup.shares, timeout_seconds=5.0)
+                broker_status = "FILLED"
+            except ValueError:
+                entry_filled = False
+                broker_status = "PENDING"
+            entry_message = f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f} (Alpaca paper)"
+        else:
+            if payload.offHoursMode not in {"queue_for_open", "extended_hours_limit"}:
+                raise ValueError(
+                    "Market is outside the regular session. Choose Queue For Open or Submit Extended-Hours Limit."
+                )
+            if payload.offHoursMode == "queue_for_open":
+                broker = self.broker.place_market_order(symbol, setup.shares, "buy")
+                entry_filled = False
+                broker_status = "PENDING"
+                entry_message = "Market closed. Order accepted and queued for the next regular session."
+            else:
+                broker = self.broker.place_limit_order(
+                    symbol,
+                    setup.shares,
+                    payload.entry,
+                    side="buy",
+                    time_in_force="day",
+                    extended_hours=True,
+                )
+                root_order_type = "LMT"
+                entry_filled = True
+                try:
+                    self.broker.wait_for_position(symbol, min_qty=setup.shares, timeout_seconds=5.0)
+                    broker_status = "FILLED"
+                except ValueError:
+                    entry_filled = False
+                    broker_status = "PENDING"
+                entry_message = (
+                    "Extended-hours limit order submitted. It will only execute if the limit can trade during "
+                    "Alpaca's supported extended session."
+                )
         tranches = [
             Tranche(
                 id=f"T{i+1}",
@@ -192,11 +232,11 @@ class CockpitService:
                 order_id=root_order_id,
                 broker_order_id=broker.broker_order_id,
                 symbol=symbol,
-                type="MKT",
+                type=root_order_type,
                 qty=setup.shares,
                 orig_qty=setup.shares,
                 price=payload.entry,
-                status="FILLED" if entry_filled else broker.status,
+                status="FILLED" if entry_filled else broker_status,
                 tranche_label=symbol,
                 covered_tranches=[],
                 parent_id=None,
@@ -206,14 +246,9 @@ class CockpitService:
             )
         )
         if entry_filled:
-            self._log(db, symbol, "exec", f"Trade entered: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f} (Alpaca paper)")
+            self._log(db, symbol, "exec", entry_message)
         else:
-            self._log(
-                db,
-                symbol,
-                "warn",
-                f"Entry submitted: Buy {setup.shares} sh {symbol} @ {payload.entry:.2f} (waiting for Alpaca paper fill)",
-            )
+            self._log(db, symbol, "warn", entry_message)
         self._log(db, symbol, "sys", "Tranches: " + " \u00b7 ".join(f"T{i+1}={qty}sh" for i, qty in enumerate(qtys)))
         db.commit()
         view = self.get_position(db, symbol)
@@ -223,20 +258,11 @@ class CockpitService:
     async def apply_stops(self, db: Session, payload: StopsRequest) -> PositionView:
         position = self._require_position(db, payload.symbol)
         self._ensure_position_is_open(position)
+        self._ensure_position_filled(position, "Protective orders are unavailable until the entry order is filled.")
         self._validate_stop_mode(payload.stopMode, payload.stopModes)
         self._reject_duplicate_active_stops(db, position.symbol)
         stop_range = round(position.entry_price - position.stop_price, 2)
         current_tranches = deepcopy(position.tranches)
-        try:
-            self.broker.wait_for_position(
-                position.symbol,
-                min_qty=sum(tranche["qty"] for tranche in current_tranches if tranche["status"] == "active"),
-            )
-        except ValueError as exc:
-            raise ValueError(
-                f"Protective stops are blocked until the Alpaca paper entry is filled for {position.symbol}. {exc}"
-            ) from exc
-        self._mark_entry_filled_if_ready(db, position)
         for index, group in enumerate(self._stop_groups(current_tranches, payload.stopMode)):
             config = payload.stopModes[index]
             pct = self._default_stop_pct(config, index, payload.stopMode)
@@ -366,7 +392,7 @@ class CockpitService:
     async def move_to_be(self, db: Session, symbol: str) -> PositionView:
         position = self._require_position(db, symbol)
         self._ensure_position_is_open(position)
-        self._mark_entry_filled_if_ready(db, position)
+        self._ensure_position_filled(position, "Protective orders are unavailable until the entry order is filled.")
         position.tranches = [
             {**tranche, "stop": position.entry_price} if tranche["status"] == "active" else tranche
             for tranche in deepcopy(position.tranches)
@@ -386,6 +412,30 @@ class CockpitService:
     async def flatten(self, db: Session, symbol: str) -> PositionView:
         position = self._require_position(db, symbol)
         self._ensure_position_is_open(position)
+        if position.phase == "entry_pending":
+            root_order = db.scalar(select(OrderEntity).where(OrderEntity.order_id == position.root_order_id))
+            if root_order and root_order.broker_order_id:
+                self.broker.cancel_order(root_order.broker_order_id)
+            if root_order:
+                root_order.status = "CANCELED"
+            canceled_tranches = []
+            for tranche in deepcopy(position.tranches):
+                tranche["status"] = "canceled"
+                canceled_tranches.append(tranche)
+            position.tranches = canceled_tranches
+            for order in db.scalars(select(OrderEntity).where(OrderEntity.symbol == position.symbol)):
+                if order.status in {"ACTIVE", "MODIFIED", "PENDING"}:
+                    if order.broker_order_id:
+                        self.broker.cancel_order(order.broker_order_id)
+                    order.status = "CANCELED"
+            position.phase = "closed"
+            position.closed_at = utcnow()
+            position.updated_at = utcnow()
+            self._log(db, position.symbol, "close", "Pending entry canceled before fill.")
+            db.commit()
+            view = self.get_position(db, position.symbol)
+            await self._broadcast_position_bundle(db, view)
+            return view
         updated_tranches = []
         broker_result = self.broker.close_position(position.symbol)
         for order in db.scalars(select(OrderEntity).where(OrderEntity.symbol == position.symbol)):
@@ -502,6 +552,8 @@ class CockpitService:
             technicalsAreFallback=market.technicals_are_fallback,
             fallbackReason=market.fallback_reason,
             quoteTimestamp=market.quote_timestamp,
+            sessionState=market.session_state,
+            quoteState=market.quote_state,
             entryBasis="bid_ask_midpoint",
             stopReferenceDefault="lod",
             bid=market.bid,
@@ -688,8 +740,13 @@ class CockpitService:
         if not any(tranche["status"] == "active" for tranche in position.tranches):
             raise ValueError(f"No active tranches remain for {position.symbol}")
 
+    def _ensure_position_filled(self, position: PositionEntity, message: str) -> None:
+        if position.phase == "entry_pending":
+            raise ValueError(message)
+
     def _ensure_profit_actionable(self, position: PositionEntity) -> None:
         self._ensure_position_is_open(position)
+        self._ensure_position_filled(position, "Position management is unavailable until the entry order is filled.")
         if position.phase not in {"protected", "P1_done", "P2_done", "runner_only"}:
             raise ValueError("Profit execution requires a protected or active profit-managed position")
 
