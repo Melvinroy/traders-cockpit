@@ -13,7 +13,7 @@
 
 - talks to the backend over REST for setup, account, positions, orders, and trade actions
 - listens on `WS /ws/cockpit` for normalized `price_update`, `position_update`, `order_update`, and `log_update` events
-- preserves the prototype’s state-driven workflow: `idle -> setup_loaded -> trade_entered -> protected -> partial profits -> runner_only -> closed`
+- preserves the prototype's state-driven workflow: `idle -> setup_loaded -> entry_pending -> trade_entered -> protected -> P1_done -> P2_done -> runner_only -> closed`
 
 ### Backend
 
