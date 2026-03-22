@@ -135,8 +135,8 @@ docker compose --env-file .env up --build -d
 
 Current integration-branch defaults:
 
-- `.env.example` and `docker-compose.yml` seed `admin / admin123!`
-- `.env.personal-paper.example` seeds `admin / change-me-admin`
+- `.env.example`, `.env.personal-paper.example`, and `docker-compose.yml` use `change-me-*` placeholder passwords
+- override all placeholder credentials in any real environment
 
 Rotate all seeded credentials before any shared or hosted deployment.
 
@@ -289,8 +289,8 @@ Copy `.env.example` to `.env` and set only what you need. Most values have safe 
 | `NEXT_PUBLIC_API_BASE_URL` | `http://127.0.0.1:8010` | Frontend REST origin for local script-driven dev. |
 | `NEXT_PUBLIC_WS_URL` | `ws://127.0.0.1:8010/ws/cockpit` | Frontend websocket origin for local script-driven dev. |
 | `CORS_ORIGINS` | `http://127.0.0.1:3010,http://localhost:3010` | Allowed browser origins. |
-| `DATABASE_URL` | local Postgres | PostgreSQL connection string. |
-| `REDIS_URL` | `redis://127.0.0.1:56379/0` | Redis connection string. |
+| `DATABASE_URL` | `postgresql://<db-user>:<db-password>@<db-host>:5432/<db-name>` | PostgreSQL connection string. |
+| `REDIS_URL` | `redis://<redis-host>:6379/0` | Redis connection string. |
 | `REDIS_CHANNEL_PREFIX` | `traders-cockpit` | Prefix for websocket pub/sub fanout. |
 | `ALLOW_SQLITE_FALLBACK` | `false` | Enables SQLite trading-data fallback explicitly. |
 | `SQLITE_FALLBACK_URL` | `sqlite:///./data/traders_cockpit.db` | SQLite DSN when fallback is enabled. |
@@ -307,9 +307,9 @@ Copy `.env.example` to `.env` and set only what you need. Most values have safe 
 | `AUTH_DB_PATH` | `./data/auth.db` | Local auth/session store path. |
 | `AUTH_SEED_USERS` | `true` | Seeds local admin and trader users. |
 | `AUTH_ADMIN_USERNAME` | `admin` | Admin login name. |
-| `AUTH_ADMIN_PASSWORD` | `admin123!` | Admin password in `.env.example`; rotate immediately. |
+| `AUTH_ADMIN_PASSWORD` | `change-me-admin` | Placeholder admin password; override immediately. |
 | `AUTH_TRADER_USERNAME` | `trader` | Trader login name. |
-| `AUTH_TRADER_PASSWORD` | `trader123!` | Trader password in `.env.example`; rotate immediately. |
+| `AUTH_TRADER_PASSWORD` | `change-me-trader` | Placeholder trader password; override immediately. |
 
 ### Broker and market data
 

@@ -22,7 +22,7 @@ $frontendProdErr = Join-Path $repoRoot "frontend.prod.err.log"
 $playwrightOutputDir = Join-Path $frontendDir "output\\playwright"
 $profileEnv = Get-LocalProfileEnv -RepoRoot $repoRoot -EnvFile $EnvFile -PersonalPaper:$PersonalPaper
 $qcAuthUsername = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_USERNAME" -Default "admin"
-$qcAuthPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "admin123!"
+$qcAuthPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "change-me-admin"
 
 function Start-FrontendDev {
   param([int]$Port)

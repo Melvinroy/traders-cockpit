@@ -23,7 +23,7 @@ const requestLog = [];
 const requestFailures = [];
 const pageErrors = [];
 const authUsername = process.env.QC_AUTH_USERNAME || "admin";
-const authPassword = process.env.QC_AUTH_PASSWORD || "admin123!";
+const authPassword = process.env.QC_AUTH_PASSWORD || "change-me-admin";
 
 function isRelevantFailure(url) {
   return !url.includes("/_next/webpack-hmr") && !url.includes("/api/auth/me");

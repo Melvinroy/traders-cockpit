@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const frontendUrl = process.env.FRONTEND_URL || "http://127.0.0.1:3000";
 const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 const authUsername = process.env.QC_AUTH_USERNAME || "admin";
-const authPassword = process.env.QC_AUTH_PASSWORD || "admin123!";
+const authPassword = process.env.QC_AUTH_PASSWORD || "change-me-admin";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..", "..");
 const outputDir = path.join(repoRoot, "frontend", "output", "playwright");

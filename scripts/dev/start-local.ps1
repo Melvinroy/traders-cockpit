@@ -92,7 +92,7 @@ Start-Process -FilePath "cmd.exe" `
 Wait-ForHttp -Url "http://127.0.0.1:$BackendPort/health"
 
 $authAdminUsername = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_USERNAME" -Default "admin"
-$authAdminPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "admin123!"
+$authAdminPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "change-me-admin"
 $accountMode = if ($PersonalPaper) { "alpaca_paper" } else { "paper" }
 $defaultEquity = [double](Get-ResolvedValue -EnvValues $profileEnv -Key "DEFAULT_ACCOUNT_EQUITY" -Default "100000")
 $defaultRiskPct = [double](Get-ResolvedValue -EnvValues $profileEnv -Key "DEFAULT_RISK_PCT" -Default "1")
