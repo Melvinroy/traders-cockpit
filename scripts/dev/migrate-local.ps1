@@ -11,7 +11,7 @@ $backendDir = Join-Path $repoRoot "backend"
 
 Push-Location $backendDir
 try {
-  $env:DATABASE_URL = "postgresql://traders_cockpit:traders_cockpit@127.0.0.1:$PostgresPort/traders_cockpit"
+  $env:DATABASE_URL = "postgresql://traders_cockpit:change-me-postgres@127.0.0.1:$PostgresPort/traders_cockpit"
   $env:REDIS_URL = "redis://127.0.0.1:$RedisPort/0"
   alembic upgrade head
 } finally {
