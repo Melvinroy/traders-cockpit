@@ -20,6 +20,7 @@ os.environ["AUTH_REQUIRE_LOGIN"] = "false"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.adapters.broker import AlpacaBrokerAdapter  # noqa: E402
+from app.adapters.market_data import SetupMarketData  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app, service  # noqa: E402
@@ -77,6 +78,8 @@ def test_setup_endpoint_returns_contract() -> None:
     assert data["quoteProvider"]
     assert data["technicalsProvider"]
     assert data["executionProvider"] == "paper"
+    assert data["sessionState"]
+    assert data["quoteState"]
     assert isinstance(data["quoteIsReal"], bool)
     assert isinstance(data["technicalsAreFallback"], bool)
     assert data["entryBasis"] == "bid_ask_midpoint"
@@ -211,7 +214,24 @@ def test_trade_lifecycle() -> None:
     )
     assert enter.status_code == 200
     position = enter.json()
-    assert position["phase"] == "trade_entered"
+    assert position["phase"] in {"trade_entered", "entry_pending"}
+
+    if position["phase"] == "entry_pending":
+        blocked_stops = client.post(
+            "/api/trade/stops",
+            json={
+                "symbol": "AAPL",
+                "stopMode": 3,
+                "stopModes": [
+                    {"mode": "stop", "pct": 33.0},
+                    {"mode": "stop", "pct": 66.0},
+                    {"mode": "stop", "pct": 100.0},
+                ],
+            },
+        )
+        assert blocked_stops.status_code == 400
+        assert "until the entry order is filled" in blocked_stops.text
+        return
 
     stops = client.post(
         "/api/trade/stops",
@@ -411,3 +431,82 @@ def test_enter_trade_recovers_stale_active_orders_for_closed_symbol() -> None:
         stale = db.scalar(select(OrderEntity).where(OrderEntity.order_id == "ORD-0002"))
         assert stale is not None
         assert stale.status == "CANCELED"
+
+
+def test_off_hours_queue_for_open_creates_pending_entry() -> None:
+    original_get_setup = service.get_setup
+
+    def fake_setup(_db, _symbol: str):
+        setup = original_get_setup(_db, "AAPL")
+        return setup.model_copy(
+            update={"sessionState": "closed", "quoteState": "cached_quote", "executionProvider": "alpaca_paper"}
+        )
+
+    service.get_setup = fake_setup
+    try:
+        setup = client.get("/api/setup/AAPL").json()
+        enter = client.post(
+            "/api/trade/enter",
+            json={
+                "symbol": "AAPL",
+                "entry": setup["entry"],
+                "stopRef": "lod",
+                "stopPrice": setup["finalStop"],
+                "trancheCount": 3,
+                "trancheModes": tranche_modes(),
+                "offHoursMode": "queue_for_open",
+            },
+        )
+        assert enter.status_code == 200
+        pending = enter.json()
+        assert pending["phase"] == "entry_pending"
+
+        flatten = client.post("/api/trade/flatten", json={"symbol": "AAPL"})
+        assert flatten.status_code == 200
+        assert flatten.json()["phase"] == "closed"
+    finally:
+        service.get_setup = original_get_setup
+
+
+def test_setup_uses_cached_quote_metadata_when_alpaca_quote_is_off_hours() -> None:
+    original_market_data = service.market_data.get_setup_data
+
+    def fake_market_data(symbol: str):
+        fallback = original_market_data("AAPL")
+        return SetupMarketData(
+            symbol=symbol.upper(),
+            provider="alpaca_quote",
+            provider_state="real_quote_fallback_technicals",
+            quote_provider="alpaca",
+            technicals_provider="mock",
+            quote_is_real=True,
+            technicals_are_fallback=True,
+            fallback_reason="technicals_fallback_only",
+            quote_timestamp=fallback.quote_timestamp,
+            session_state="closed",
+            quote_state="cached_quote",
+            bid=fallback.bid,
+            ask=fallback.ask,
+            last=fallback.last,
+            lod=fallback.lod,
+            hod=fallback.hod,
+            prev_close=fallback.prev_close,
+            atr14=fallback.atr14,
+            sma10=fallback.sma10,
+            sma50=fallback.sma50,
+            sma200=fallback.sma200,
+            sma200_prev=fallback.sma200_prev,
+            rvol=fallback.rvol,
+            days_to_cover=fallback.days_to_cover,
+        )
+
+    service.market_data.get_setup_data = fake_market_data
+    try:
+        response = client.get("/api/setup/AAPL")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["quoteProvider"] == "alpaca"
+        assert data["sessionState"] == "closed"
+        assert data["quoteState"] == "cached_quote"
+    finally:
+        service.market_data.get_setup_data = original_market_data

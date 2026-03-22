@@ -1,5 +1,5 @@
 import { OpenPositionsList } from "@/components/OpenPositionsList";
-import { fp } from "@/lib/cockpit-ui";
+import { formatQuoteTimestamp, fp, sessionStateLabel } from "@/lib/cockpit-ui";
 import type { AccountView, PositionView, SetupResponse } from "@/lib/types";
 
 type Props = {
@@ -21,11 +21,12 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
   const extFrom10Text = Number.isFinite(extFrom10Ma) ? `${extFrom10Ma?.toFixed(2)}%` : "--";
   const daysToCoverText = Number.isFinite(daysToCover) ? `${daysToCover?.toFixed(1)}` : "--";
   const providerStateLabel = setup
-    ? `${setup.quoteIsReal ? "Real quote" : "Quote unavailable"} via ${setup.quoteProvider} | technicals via ${setup.technicalsProvider} | execution ${setup.executionProvider}`
+    ? `${setup.quoteIsReal ? "Real quote" : "Quote unavailable"} via ${setup.quoteProvider} | execution ${setup.executionProvider}`
     : "";
   const providerSubnote = setup?.technicalsAreFallback
     ? "Derived metrics are still fallback-backed locally."
     : "All displayed setup fields are provider-backed.";
+  const quoteTimestamp = setup?.quoteTimestamp ? formatQuoteTimestamp(setup.quoteTimestamp) : "--";
 
   return (
     <div className="panel setup-panel">
@@ -58,6 +59,10 @@ export function SetupPanel({ symbol, setup, account, positions, onSelectPosition
                 <span className="kv-val cyan">{fp(setup.entry)}</span>
               </div>
               <div className="provider-note">{providerStateLabel}</div>
+              <div className="provider-subnote">
+                Session: {setup ? sessionStateLabel(setup.sessionState) : "--"} | Quote state: {setup?.quoteState ?? "--"}
+              </div>
+              <div className="provider-subnote">Using latest available Alpaca quote from {quoteTimestamp}</div>
               <div className="provider-subnote">{providerSubnote}</div>
               {setup.fallbackReason ? <div className="provider-subnote">Fallback reason: {setup.fallbackReason}</div> : null}
             </div>
