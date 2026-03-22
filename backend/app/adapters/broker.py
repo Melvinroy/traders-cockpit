@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -37,6 +39,9 @@ class BrokerAdapter:
     def cancel_order(self, broker_order_id: str) -> None:
         raise NotImplementedError
 
+    def get_session_state(self) -> str:
+        raise NotImplementedError
+
 
 class PaperBrokerAdapter(BrokerAdapter):
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
@@ -62,6 +67,9 @@ class PaperBrokerAdapter(BrokerAdapter):
     def cancel_order(self, broker_order_id: str) -> None:
         return None
 
+    def get_session_state(self) -> str:
+        return "regular_open"
+
 
 class AlpacaBrokerAdapter(BrokerAdapter):
     def __init__(self, settings: Settings) -> None:
@@ -71,6 +79,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             if settings.broker_mode == "alpaca_live"
             else settings.alpaca_api_base_url
         )
+        self.market_tz = ZoneInfo("America/New_York")
 
     def _client(self) -> httpx.Client:
         self._ensure_execution_allowed()
@@ -107,10 +116,32 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 return f"{prefix}: {detail}"
         return f"{prefix}: {exc}"
 
-    def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
+    def _parse_timestamp(self, raw: str | None) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+    def _session_state_from_timestamp(self, timestamp: datetime) -> str:
+        eastern = timestamp.astimezone(self.market_tz)
+        if eastern.weekday() >= 5:
+            return "closed"
+        current_minutes = eastern.hour * 60 + eastern.minute
+        if 570 <= current_minutes < 960:
+            return "regular_open"
+        if 240 <= current_minutes < 570:
+            return "pre_market"
+        if 960 <= current_minutes < 1200:
+            return "after_hours"
+        return "overnight"
+
+    def place_market_order(self, symbol: str, qty: int, side: str, time_in_force: str = "day") -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise("FILLED", "Alpaca paper credentials are missing for broker execution")
-        payload = {"symbol": symbol, "qty": qty, "side": side, "type": "market", "time_in_force": "day"}
+        payload = {"symbol": symbol, "qty": qty, "side": side, "type": "market", "time_in_force": time_in_force}
         try:
             with self._client() as client:
                 response = client.post("/v2/orders", json=payload)
@@ -140,17 +171,27 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             return self._fallback_or_raise("ACTIVE", self._extract_http_error_message("Alpaca stop order failed", exc))
         return BrokerOrderResult(data.get("id"), str(data.get("status", "new")).upper())
 
-    def place_limit_order(self, symbol: str, qty: int, limit_price: float) -> BrokerOrderResult:
+    def place_limit_order(
+        self,
+        symbol: str,
+        qty: int,
+        limit_price: float,
+        side: str = "sell",
+        time_in_force: str = "gtc",
+        extended_hours: bool = False,
+    ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise("FILLED", "Alpaca paper credentials are missing for profit execution")
         payload = {
             "symbol": symbol,
             "qty": qty,
-            "side": "sell",
+            "side": side,
             "type": "limit",
             "limit_price": limit_price,
-            "time_in_force": "gtc",
+            "time_in_force": time_in_force,
         }
+        if extended_hours:
+            payload["extended_hours"] = True
         try:
             with self._client() as client:
                 response = client.post("/v2/orders", json=payload)
@@ -241,3 +282,22 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             if self.settings.allow_controller_mock:
                 return
             raise ValueError(self._extract_http_error_message("Alpaca order cancellation failed", exc)) from exc
+
+    def get_session_state(self) -> str:
+        if not self.settings.has_alpaca_credentials:
+            if self.settings.allow_controller_mock:
+                return "regular_open"
+            raise ValueError("Alpaca paper credentials are missing for broker clock checks")
+        try:
+            with self._client() as client:
+                response = client.get("/v2/clock")
+                response.raise_for_status()
+                payload = response.json()
+            if bool(payload.get("is_open")):
+                return "regular_open"
+            timestamp = self._parse_timestamp(str(payload.get("timestamp") or ""))
+            return self._session_state_from_timestamp(timestamp or datetime.now(UTC))
+        except httpx.HTTPError as exc:
+            if self.settings.allow_controller_mock:
+                return "regular_open"
+            raise ValueError(self._extract_http_error_message("Alpaca market clock lookup failed", exc)) from exc

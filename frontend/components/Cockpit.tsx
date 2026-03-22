@@ -10,7 +10,7 @@ import { ProfitTakingPanel } from "@/components/ProfitTakingPanel";
 import { SetupPanel } from "@/components/SetupPanel";
 import { StopProtectionPanel } from "@/components/StopProtectionPanel";
 import { ApiError, api } from "@/lib/api";
-import type { AccountView, AuthUser, LogEntry, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
+import type { AccountView, AuthUser, LogEntry, OffHoursMode, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
 
 const DEFAULT_STOP_MODES: StopMode[] = [
   { mode: "stop", pct: null },
@@ -38,6 +38,7 @@ export function Cockpit() {
   const [activeSymbol, setActiveSymbol] = useState("");
   const [entryPrice, setEntryPrice] = useState(0);
   const [manualStop, setManualStop] = useState(0);
+  const [offHoursMode, setOffHoursMode] = useState<OffHoursMode>("queue_for_open");
   const [stopRef, setStopRef] = useState<"lod" | "atr" | "manual">("lod");
   const [stopMode, setStopMode] = useState(3);
   const [stopModes, setStopModes] = useState<StopMode[]>(DEFAULT_STOP_MODES);
@@ -105,6 +106,7 @@ export function Cockpit() {
       setSetup(position.setup as SetupResponse);
       setEntryPrice(position.setup.entry);
       setManualStop(position.setup.finalStop);
+      setOffHoursMode("queue_for_open");
       setStopMode(position.stopMode || 3);
       setStopModes(position.stopModes.length ? position.stopModes : DEFAULT_STOP_MODES);
       setTrancheCount(position.trancheCount || 3);
@@ -267,6 +269,7 @@ export function Cockpit() {
     setActiveSymbol("");
     setStopMode(3);
     setStopModes(DEFAULT_STOP_MODES);
+    setOffHoursMode("queue_for_open");
     subscribePrice(ticker);
     await hydrate({ autoSelectFirst: false });
     pulse("load");
@@ -337,7 +340,8 @@ export function Cockpit() {
         stopRef,
         stopPrice: stopRef === "manual" ? manualStop : setup.finalStop,
         trancheCount,
-        trancheModes
+        trancheModes,
+        offHoursMode: setup.sessionState === "regular_open" ? null : offHoursMode
       });
       setStopMode((current) => current || 3);
       await hydrate({ autoSelectFirst: false });
@@ -478,6 +482,7 @@ export function Cockpit() {
           setTicker("");
           setEntryPrice(0);
           setManualStop(0);
+          setOffHoursMode("queue_for_open");
           setStopMode(3);
           setStopModes(DEFAULT_STOP_MODES);
           setTrancheCount(3);
@@ -510,16 +515,19 @@ export function Cockpit() {
           entryPrice={entryPrice || setup?.entry || 0}
           stopRef={stopRef}
           manualStop={manualStop || setup?.finalStop || 0}
+          offHoursMode={offHoursMode}
           previewFlashing={Boolean(flashState.preview)}
           enterFlashing={Boolean(flashState.enter)}
           onEntryChange={setEntryPrice}
           onStopRefChange={setStopRef}
           onManualStopChange={setManualStop}
+          onOffHoursModeChange={setOffHoursMode}
           onPreview={() => void previewTrade()}
           onEnterTrade={() => void enterTrade()}
         />
         <StopProtectionPanel
           setup={setup}
+          phase={activePosition?.phase ?? null}
           stopMode={stopMode}
           stopModes={stopModes}
           tranches={activePosition?.tranches ?? []}

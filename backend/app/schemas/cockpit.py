@@ -81,6 +81,8 @@ class SetupResponse(BaseModel):
     technicalsAreFallback: bool = True
     fallbackReason: str | None = None
     quoteTimestamp: datetime | None = None
+    sessionState: Literal["regular_open", "overnight", "pre_market", "after_hours", "closed"] = "closed"
+    quoteState: Literal["live_quote", "cached_quote", "quote_unavailable"] = "quote_unavailable"
     entryBasis: str = "midpoint"
     stopReferenceDefault: str = "lod"
     bid: float
@@ -125,6 +127,7 @@ class TradeEnterRequest(BaseModel):
     stopPrice: float
     trancheCount: int = 3
     trancheModes: list[TrancheMode]
+    offHoursMode: Literal["queue_for_open", "extended_hours_limit"] | None = None
 
 
 class StopsRequest(BaseModel):
