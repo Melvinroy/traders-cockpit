@@ -1,8 +1,8 @@
-> Status: Open
+> Status: Closed
 > Branch: codex/feature-alpaca-offhours-runtime
 > Opened: 2026-03-22
-> Closed:
-> Closing Commit:
+> Closed: 2026-03-22
+> Closing Commit: 298c330
 
 ## Issue
 
