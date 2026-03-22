@@ -12,7 +12,7 @@ const playwrightEntry = require.resolve("playwright", {
 const playwrightModule = await import(pathToFileURL(playwrightEntry).href);
 const { chromium } = playwrightModule.default ?? playwrightModule;
 const authUsername = process.env.QC_AUTH_USERNAME || "admin";
-const authPassword = process.env.QC_AUTH_PASSWORD || "admin123!";
+const authPassword = process.env.QC_AUTH_PASSWORD || "change-me-admin";
 
 function safeName(value) {
   return value.toLowerCase().replace(/[^a-z0-9-_]+/g, "-");

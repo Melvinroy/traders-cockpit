@@ -15,7 +15,7 @@ $repoRoot = Get-RepoRoot
 $envPath = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $repoRoot $EnvFile }
 $profileEnv = Get-LocalProfileEnv -RepoRoot $repoRoot -EnvFile $envPath -PersonalPaper
 $qcAuthUsername = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_USERNAME" -Default "admin"
-$qcAuthPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "admin123!"
+$qcAuthPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "change-me-admin"
 
 if ($StartStack) {
   & (Join-Path $PSScriptRoot "start-docker-local-personal-paper.ps1") `

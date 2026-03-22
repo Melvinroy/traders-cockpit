@@ -35,9 +35,9 @@ client = TestClient(app)
 auth_store = get_auth_store(Settings.from_env())
 auth_store.bootstrap_users(
     admin_username="admin",
-    admin_password="admin123!",
+    admin_password="change-me-admin",
     trader_username="trader",
-    trader_password="trader123!",
+    trader_password="change-me-trader",
     seed_enabled=True,
 )
 
@@ -52,9 +52,9 @@ def reset_db() -> None:
     auth_store.reset_for_tests()
     auth_store.bootstrap_users(
         admin_username="admin",
-        admin_password="admin123!",
+        admin_password="change-me-admin",
         trader_username="trader",
-        trader_password="trader123!",
+        trader_password="change-me-trader",
         seed_enabled=True,
     )
     yield
@@ -140,7 +140,7 @@ def test_setup_fails_loudly_when_real_quote_is_unavailable() -> None:
 
 
 def test_login_creates_session_and_me_resolves_user() -> None:
-    login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123!"})
+    login = client.post("/api/auth/login", json={"username": "admin", "password": "change-me-admin"})
     assert login.status_code == 200
     payload = login.json()
     assert payload["username"] == "admin"
@@ -167,7 +167,7 @@ def test_staging_cookie_settings_can_support_hosted_preview() -> None:
     routes_auth_module.settings.auth_cookie_samesite = "none"
     routes_auth_module.settings.auth_cookie_secure = True
     try:
-        login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123!"})
+        login = client.post("/api/auth/login", json={"username": "admin", "password": "change-me-admin"})
         assert login.status_code == 200
         cookie_header = login.headers.get("set-cookie", "").lower()
         assert "samesite=none" in cookie_header
@@ -185,7 +185,7 @@ def test_sensitive_routes_require_session_when_auth_is_enabled() -> None:
         unauthenticated = client.get("/api/account")
         assert unauthenticated.status_code == 401
 
-        login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123!"})
+        login = client.post("/api/auth/login", json={"username": "admin", "password": "change-me-admin"})
         assert login.status_code == 200
 
         authenticated = client.get("/api/account")

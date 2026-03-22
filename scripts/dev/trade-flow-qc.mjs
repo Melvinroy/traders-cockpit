@@ -9,7 +9,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..", "..");
 const outputDir = path.join(repoRoot, "frontend", "output", "playwright");
 const authUsername = process.env.QC_AUTH_USERNAME || "admin";
-const authPassword = process.env.QC_AUTH_PASSWORD || "admin123!";
+const authPassword = process.env.QC_AUTH_PASSWORD || "change-me-admin";
 const require = createRequire(import.meta.url);
 const playwrightEntry = require.resolve("playwright", {
   paths: [repoRoot, path.join(repoRoot, "frontend")]

@@ -33,9 +33,9 @@ services:
       APP_ENV: ${APP_ENV:-development}
       AUTH_REQUIRE_LOGIN: ${AUTH_REQUIRE_LOGIN:-true}
       AUTH_ADMIN_USERNAME: ${AUTH_ADMIN_USERNAME:-admin}
-      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:-admin123!}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:-change-me-admin}
       AUTH_TRADER_USERNAME: ${AUTH_TRADER_USERNAME:-trader}
-      AUTH_TRADER_PASSWORD: ${AUTH_TRADER_PASSWORD:-trader123!}
+      AUTH_TRADER_PASSWORD: ${AUTH_TRADER_PASSWORD:-change-me-trader}
       DATABASE_URL: postgresql://traders_cockpit:traders_cockpit@postgres:5432/traders_cockpit
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: http://127.0.0.1:${FRONTEND_HOST_PORT:-3000},http://localhost:${FRONTEND_HOST_PORT:-3000}
