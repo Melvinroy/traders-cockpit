@@ -41,6 +41,33 @@ This app uses a simple request-scoped observability contract for API troubleshoo
 - `trade.flatten`
 - `trade.move_to_be`
 - `orders.cancel`
+- `market_data.setup.fallback`
+- `market_data.setup.failed`
+- `broker.entry.submit`
+- `broker.entry.submit.fallback`
+- `broker.entry.submit.failed`
+- `broker.trailing.submit`
+- `broker.trailing.submit.fallback`
+- `broker.trailing.submit.failed`
+- `broker.position.wait.retry`
+- `broker.position.wait.succeeded`
+- `broker.position.wait.failed`
+- `broker.position.wait.fallback`
+- `broker.position.close`
+- `broker.position.close.fallback`
+- `broker.position.close.failed`
+- `broker.order.cancel`
+- `broker.order.cancel.fallback`
+- `broker.order.cancel.failed`
+- `broker.orders.recent.fallback`
+- `broker.orders.recent.failed`
+- `broker.order.lookup`
+- `broker.order.lookup.fallback`
+- `broker.order.lookup.failed`
+- `broker.session.lookup.fallback`
+- `broker.session.lookup.failed`
+- `broker.account.lookup.fallback`
+- `broker.account.lookup.failed`
 
 ## Logging safety rules
 
@@ -56,4 +83,6 @@ This app uses a simple request-scoped observability contract for API troubleshoo
    - auth issue -> `auth.*`
    - trade preview/entry/stops/profit/flatten -> `trade.*`
    - cancel issue -> `orders.cancel`
+   - broker submission/lookup/cancel issue -> `broker.*`
+   - setup quote or fallback issue -> `market_data.*`
 4. If the request never reached the app, check reverse-proxy or platform logs for the same request id if they propagate it.
