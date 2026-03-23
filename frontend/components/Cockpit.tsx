@@ -243,6 +243,10 @@ export function Cockpit() {
   const wsHasOpenedRef = useRef(false);
   const activeSymbolRef = useRef("");
   const setupLoadedRef = useRef(false);
+  const stopModeRef = useRef(3);
+  const stopModesRef = useRef<StopMode[]>(DEFAULT_STOP_MODES);
+  const trancheCountRef = useRef(3);
+  const trancheModesRef = useRef<TrancheMode[]>(DEFAULT_TRANCHE_MODES);
   const dragCleanupRef = useRef<(() => void) | null>(null);
 
   const activePosition = useMemo(
@@ -357,6 +361,22 @@ export function Cockpit() {
     setupLoadedRef.current = Boolean(setup);
   }, [setup]);
 
+  useEffect(() => {
+    stopModeRef.current = stopMode;
+  }, [stopMode]);
+
+  useEffect(() => {
+    stopModesRef.current = stopModes;
+  }, [stopModes]);
+
+  useEffect(() => {
+    trancheCountRef.current = trancheCount;
+  }, [trancheCount]);
+
+  useEffect(() => {
+    trancheModesRef.current = trancheModes;
+  }, [trancheModes]);
+
   const pulse = useCallback((key: string) => {
     setFlashState((current) => ({ ...current, [key]: Date.now() }));
     window.setTimeout(() => {
@@ -402,12 +422,20 @@ export function Cockpit() {
         limitPrice: position.setup.entry,
       });
       setOffHoursMode("queue_for_open");
-      const nextStopMode = position.stopMode || 3;
-      const nextTrancheCount = position.trancheCount || 3;
-      setStopMode(nextStopMode);
-      setStopModes(position.stopModes.length ? position.stopModes : defaultStopModesFor(nextStopMode));
-      setTrancheCount(nextTrancheCount);
-      setTrancheModes(position.trancheModes.length ? position.trancheModes : defaultTrancheModesFor(nextTrancheCount));
+      const resolvedStopMode = position.stopMode && position.stopMode > 0 ? position.stopMode : stopModeRef.current || 3;
+      const resolvedTrancheCount = position.trancheCount && position.trancheCount > 0
+        ? position.trancheCount
+        : trancheCountRef.current || 3;
+      const nextStopModes = position.stopModes.length
+        ? position.stopModes
+        : stopModesRef.current.slice(0, resolvedStopMode);
+      const nextTrancheModes = position.trancheModes.length
+        ? position.trancheModes
+        : trancheModesRef.current.slice(0, resolvedTrancheCount);
+      setStopMode(resolvedStopMode);
+      setStopModes(nextStopModes.length ? nextStopModes : defaultStopModesFor(resolvedStopMode));
+      setTrancheCount(resolvedTrancheCount);
+      setTrancheModes(nextTrancheModes.length ? nextTrancheModes : defaultTrancheModesFor(resolvedTrancheCount));
       subscribePrice(position.symbol);
     },
     [subscribePrice]
@@ -786,10 +814,17 @@ export function Cockpit() {
         offHoursMode: setup.sessionState === "regular_open" ? null : mode,
         order: effectiveEntryOrder,
       });
+      setPositions((current) => {
+        const next = current.some((item) => item.symbol === position.symbol)
+          ? current.map((item) => (item.symbol === position.symbol ? position : item))
+          : [position, ...current];
+        return next;
+      });
+      applyPositionState(position);
       setStopMode((current) => current || 3);
       setOffHoursModalOpen(false);
       await hydrate({ autoSelectFirst: false });
-      selectPosition(position.symbol, [position, ...positions]);
+      applyPositionState(position);
       pulse("enter");
       setRuntimeError(null);
     } catch (error) {
