@@ -22,7 +22,7 @@ BACKEND_URL = f"http://{HOST}:{BACKEND_PORT}"
 FRONTEND_URL = f"http://{HOST}:{FRONTEND_PORT}"
 QC_SYMBOL = os.getenv("QC_SYMBOL", "MSFT").strip().upper() or "MSFT"
 AUTH_ADMIN_USERNAME = os.getenv("QC_AUTH_USERNAME", "admin")
-AUTH_ADMIN_PASSWORD = os.getenv("QC_AUTH_PASSWORD", "change-me-admin")
+QC_ADMIN_PASSWORD = os.getenv("QC_AUTH_PASSWORD", "change-me-admin")
 
 
 def _script_command_name(base: str) -> str:
@@ -149,7 +149,7 @@ def main() -> None:
             "AUTH_DB_PATH": "./data/ci-auth.db",
             "AUTH_REQUIRE_LOGIN": "true",
             "AUTH_ADMIN_USERNAME": AUTH_ADMIN_USERNAME,
-            "AUTH_ADMIN_PASSWORD": AUTH_ADMIN_PASSWORD,
+            "AUTH_ADMIN_PASSWORD": QC_ADMIN_PASSWORD,
             "BROKER_MODE": "paper",
             "ALLOW_LIVE_TRADING": "false",
             "ALLOW_CONTROLLER_MOCK": "true",
@@ -176,7 +176,7 @@ def main() -> None:
             "FRONTEND_URL": FRONTEND_URL,
             "BACKEND_URL": BACKEND_URL,
             "QC_AUTH_USERNAME": AUTH_ADMIN_USERNAME,
-            "QC_AUTH_PASSWORD": AUTH_ADMIN_PASSWORD,
+            "QC_AUTH_PASSWORD": QC_ADMIN_PASSWORD,
             "QC_SYMBOL": QC_SYMBOL,
             "BROWSER_SMOKE_LABEL": "ci-browser-smoke",
         }
