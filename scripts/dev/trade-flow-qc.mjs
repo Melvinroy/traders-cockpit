@@ -220,6 +220,7 @@ try {
   const acceptableFinalStates = [
     JSON.stringify(["CANCELED", "CANCELED", "ACTIVE"]),
     JSON.stringify(["CANCELED", "CANCELED", "CANCELED"]),
+    JSON.stringify(["FILLED", "CANCELED", "CANCELED"]),
     JSON.stringify(["FILLED", "FILLED", "ACTIVE"]),
     JSON.stringify(["FILLED", "FILLED", "CANCELED"]),
     JSON.stringify(["FILLED", "FILLED", "FILLED"]),
