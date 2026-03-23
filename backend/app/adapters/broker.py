@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.core.config import Settings
+from app.core.observability import log_event, request_log_fields
 
 
 @dataclass
@@ -247,6 +248,17 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         self._account_summary_cache: tuple[float, dict[str, float]] | None = None
         self._recent_orders_cache: tuple[float, int, list[dict]] | None = None
 
+    def _log_event(self, event: str, level: str = "info", **fields: object) -> None:
+        log_event(
+            event,
+            level=level,
+            **request_log_fields(
+                adapter="alpaca",
+                broker_mode=self.settings.broker_mode,
+                **fields,
+            ),
+        )
+
     def _client(self) -> httpx.Client:
         self._ensure_execution_allowed()
         return httpx.Client(
@@ -266,9 +278,30 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         if not self.settings.live_confirmation_token:
             raise ValueError("Live trading confirmation token is not configured")
 
-    def _fallback_or_raise(self, fallback_status: str, message: str) -> BrokerOrderResult:
+    def _fallback_or_raise(
+        self,
+        event_base: str,
+        fallback_status: str,
+        message: str,
+        **fields: object,
+    ) -> BrokerOrderResult:
         if self.settings.allow_controller_mock:
+            self._log_event(
+                f"{event_base}.fallback",
+                level="warning",
+                outcome="fallback",
+                fallback_status=fallback_status,
+                detail=message,
+                **fields,
+            )
             return BrokerOrderResult(None, fallback_status)
+        self._log_event(
+            f"{event_base}.failed",
+            level="error",
+            outcome="error",
+            detail=message,
+            **fields,
+        )
         raise ValueError(message)
 
     def _extract_http_error_message(self, prefix: str, exc: httpx.HTTPError) -> str:
@@ -307,7 +340,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     def place_entry_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "FILLED", "Alpaca paper credentials are missing for broker execution"
+                "broker.entry.submit",
+                "FILLED",
+                "Alpaca paper credentials are missing for broker execution",
+                symbol=order.symbol,
+                side=order.side,
+                order_type=order.order_type,
+                time_in_force=order.time_in_force,
+                order_class=order.order_class,
             )
         payload: dict[str, object] = {
             "symbol": order.symbol,
@@ -338,8 +378,26 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 data = response.json()
         except httpx.HTTPError as exc:
             return self._fallback_or_raise(
-                "FILLED", self._extract_http_error_message("Alpaca market order failed", exc)
+                "broker.entry.submit",
+                "FILLED",
+                self._extract_http_error_message("Alpaca market order failed", exc),
+                symbol=order.symbol,
+                side=order.side,
+                order_type=order.order_type,
+                time_in_force=order.time_in_force,
+                order_class=order.order_class,
             )
+        self._log_event(
+            "broker.entry.submit",
+            symbol=order.symbol,
+            side=order.side,
+            order_type=order.order_type,
+            time_in_force=order.time_in_force,
+            order_class=order.order_class,
+            broker_order_id=data.get("id"),
+            status=str(data.get("status", "accepted")).upper(),
+            outcome="success",
+        )
         return BrokerOrderResult(data.get("id"), str(data.get("status", "accepted")).upper(), data)
 
     def place_market_order(
@@ -356,7 +414,13 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "ACTIVE", "Alpaca paper credentials are missing for stop execution"
+                "broker.stop.submit",
+                "ACTIVE",
+                "Alpaca paper credentials are missing for stop execution",
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                stop_price=stop_price,
             )
         result = self.place_entry_order(
             BrokerEntryOrder(
@@ -381,7 +445,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "FILLED", "Alpaca paper credentials are missing for profit execution"
+                "broker.limit.submit",
+                "FILLED",
+                "Alpaca paper credentials are missing for profit execution",
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                limit_price=limit_price,
+                time_in_force=time_in_force,
             )
         return self.place_entry_order(
             BrokerEntryOrder(
@@ -400,7 +471,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "ACTIVE", "Alpaca paper credentials are missing for runner execution"
+                "broker.trailing.submit",
+                "ACTIVE",
+                "Alpaca paper credentials are missing for runner execution",
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                trail=trail,
+                trail_unit=trail_unit,
             )
         payload = {
             "symbol": symbol,
@@ -420,14 +498,35 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 data = response.json()
         except httpx.HTTPError as exc:
             return self._fallback_or_raise(
-                "ACTIVE", self._extract_http_error_message("Alpaca trailing stop failed", exc)
+                "broker.trailing.submit",
+                "ACTIVE",
+                self._extract_http_error_message("Alpaca trailing stop failed", exc),
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                trail=trail,
+                trail_unit=trail_unit,
             )
+        self._log_event(
+            "broker.trailing.submit",
+            symbol=symbol,
+            side=side,
+            qty=qty,
+            trail=trail,
+            trail_unit=trail_unit,
+            broker_order_id=data.get("id"),
+            status=str(data.get("status", "new")).upper(),
+            outcome="success",
+        )
         return BrokerOrderResult(data.get("id"), str(data.get("status", "new")).upper())
 
     def close_position(self, symbol: str) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "FILLED", "Alpaca paper credentials are missing for flatten execution"
+                "broker.position.close",
+                "FILLED",
+                "Alpaca paper credentials are missing for flatten execution",
+                symbol=symbol,
             )
         try:
             with self._client() as client:
@@ -436,8 +535,18 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 data = response.json()
         except httpx.HTTPError as exc:
             return self._fallback_or_raise(
-                "FILLED", self._extract_http_error_message("Alpaca close position failed", exc)
+                "broker.position.close",
+                "FILLED",
+                self._extract_http_error_message("Alpaca close position failed", exc),
+                symbol=symbol,
             )
+        self._log_event(
+            "broker.position.close",
+            symbol=symbol,
+            broker_order_id=data.get("id"),
+            outcome="success",
+            status="FILLED",
+        )
         return BrokerOrderResult(data.get("id"), "FILLED")
 
     def wait_for_position(
@@ -445,28 +554,92 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     ) -> int:
         if not self.settings.has_alpaca_credentials:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.position.wait.fallback",
+                    level="warning",
+                    symbol=symbol,
+                    min_qty=min_qty,
+                    timeout_seconds=timeout_seconds,
+                    outcome="fallback",
+                )
                 return min_qty
-            raise ValueError("Alpaca paper credentials are missing for broker position checks")
+            message = "Alpaca paper credentials are missing for broker position checks"
+            self._log_event(
+                "broker.position.wait.failed",
+                level="error",
+                symbol=symbol,
+                min_qty=min_qty,
+                timeout_seconds=timeout_seconds,
+                outcome="error",
+                detail=message,
+            )
+            raise ValueError(message)
         import time
 
         end_time = time.monotonic() + timeout_seconds
         last_error: str | None = None
+        attempts = 0
         while time.monotonic() < end_time:
+            attempts += 1
             try:
                 with self._client() as client:
                     response = client.get(f"/v2/positions/{symbol}")
                     if response.status_code == 404:
+                        self._log_event(
+                            "broker.position.wait.retry",
+                            symbol=symbol,
+                            min_qty=min_qty,
+                            attempt=attempts,
+                            outcome="retry",
+                            detail="Broker position not available yet",
+                        )
                         time.sleep(0.5)
                         continue
                     response.raise_for_status()
                     data = response.json()
                 qty = int(float(data.get("qty", 0)))
                 if qty >= min_qty:
+                    self._log_event(
+                        "broker.position.wait.succeeded",
+                        symbol=symbol,
+                        min_qty=min_qty,
+                        qty=qty,
+                        attempts=attempts,
+                        outcome="success",
+                    )
                     return qty
                 last_error = f"Broker position quantity {qty} is below expected {min_qty}"
+                self._log_event(
+                    "broker.position.wait.retry",
+                    symbol=symbol,
+                    min_qty=min_qty,
+                    qty=qty,
+                    attempt=attempts,
+                    outcome="retry",
+                    detail=last_error,
+                )
             except httpx.HTTPError as exc:
                 last_error = self._extract_http_error_message("Alpaca position lookup failed", exc)
+                self._log_event(
+                    "broker.position.wait.retry",
+                    level="warning",
+                    symbol=symbol,
+                    min_qty=min_qty,
+                    attempt=attempts,
+                    outcome="retry",
+                    detail=last_error,
+                )
             time.sleep(0.5)
+        self._log_event(
+            "broker.position.wait.failed",
+            level="error",
+            symbol=symbol,
+            min_qty=min_qty,
+            attempts=attempts,
+            timeout_seconds=timeout_seconds,
+            outcome="error",
+            detail=last_error or f"Broker position for {symbol} is not available yet",
+        )
         raise ValueError(last_error or f"Broker position for {symbol} is not available yet")
 
     def cancel_order(self, broker_order_id: str) -> None:
@@ -474,20 +647,61 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             return
         if not self.settings.has_alpaca_credentials:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.order.cancel.fallback",
+                    level="warning",
+                    broker_order_id=broker_order_id,
+                    outcome="fallback",
+                )
                 return
-            raise ValueError("Alpaca paper credentials are missing for broker order cancellation")
+            message = "Alpaca paper credentials are missing for broker order cancellation"
+            self._log_event(
+                "broker.order.cancel.failed",
+                level="error",
+                broker_order_id=broker_order_id,
+                outcome="error",
+                detail=message,
+            )
+            raise ValueError(message)
         try:
             with self._client() as client:
                 response = client.delete(f"/v2/orders/{broker_order_id}")
                 if response.status_code in {404, 422}:
+                    self._log_event(
+                        "broker.order.cancel",
+                        broker_order_id=broker_order_id,
+                        outcome="noop",
+                        status=response.status_code,
+                    )
                     return
                 response.raise_for_status()
         except httpx.HTTPError as exc:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.order.cancel.fallback",
+                    level="warning",
+                    broker_order_id=broker_order_id,
+                    outcome="fallback",
+                    detail=self._extract_http_error_message(
+                        "Alpaca order cancellation failed", exc
+                    ),
+                )
                 return
+            self._log_event(
+                "broker.order.cancel.failed",
+                level="error",
+                broker_order_id=broker_order_id,
+                outcome="error",
+                detail=self._extract_http_error_message("Alpaca order cancellation failed", exc),
+            )
             raise ValueError(
                 self._extract_http_error_message("Alpaca order cancellation failed", exc)
             ) from exc
+        self._log_event(
+            "broker.order.cancel",
+            broker_order_id=broker_order_id,
+            outcome="success",
+        )
 
     def list_recent_orders(self, limit: int = 50) -> list[dict]:
         import time
@@ -499,8 +713,22 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 return [dict(order) for order in cached_payload[:limit]]
         if not self.settings.has_alpaca_credentials:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.orders.recent.fallback",
+                    level="warning",
+                    limit=limit,
+                    outcome="fallback",
+                )
                 return []
-            raise ValueError("Alpaca paper credentials are missing for broker order lookup")
+            message = "Alpaca paper credentials are missing for broker order lookup"
+            self._log_event(
+                "broker.orders.recent.failed",
+                level="error",
+                limit=limit,
+                outcome="error",
+                detail=message,
+            )
+            raise ValueError(message)
         try:
             with self._client() as client:
                 response = client.get(
@@ -510,7 +738,23 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 payload = response.json()
         except httpx.HTTPError as exc:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.orders.recent.fallback",
+                    level="warning",
+                    limit=limit,
+                    outcome="fallback",
+                    detail=self._extract_http_error_message(
+                        "Alpaca recent orders lookup failed", exc
+                    ),
+                )
                 return []
+            self._log_event(
+                "broker.orders.recent.failed",
+                level="error",
+                limit=limit,
+                outcome="error",
+                detail=self._extract_http_error_message("Alpaca recent orders lookup failed", exc),
+            )
             raise ValueError(
                 self._extract_http_error_message("Alpaca recent orders lookup failed", exc)
             ) from exc
@@ -523,18 +767,51 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             return None
         if not self.settings.has_alpaca_credentials:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.order.lookup.fallback",
+                    level="warning",
+                    broker_order_id=broker_order_id,
+                    outcome="fallback",
+                )
                 return None
-            raise ValueError("Alpaca paper credentials are missing for broker order lookup")
+            message = "Alpaca paper credentials are missing for broker order lookup"
+            self._log_event(
+                "broker.order.lookup.failed",
+                level="error",
+                broker_order_id=broker_order_id,
+                outcome="error",
+                detail=message,
+            )
+            raise ValueError(message)
         try:
             with self._client() as client:
                 response = client.get(f"/v2/orders/{broker_order_id}")
                 if response.status_code == 404:
+                    self._log_event(
+                        "broker.order.lookup",
+                        broker_order_id=broker_order_id,
+                        outcome="not_found",
+                    )
                     return None
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPError as exc:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.order.lookup.fallback",
+                    level="warning",
+                    broker_order_id=broker_order_id,
+                    outcome="fallback",
+                    detail=self._extract_http_error_message("Alpaca order lookup failed", exc),
+                )
                 return None
+            self._log_event(
+                "broker.order.lookup.failed",
+                level="error",
+                broker_order_id=broker_order_id,
+                outcome="error",
+                detail=self._extract_http_error_message("Alpaca order lookup failed", exc),
+            )
             raise ValueError(
                 self._extract_http_error_message("Alpaca order lookup failed", exc)
             ) from exc
@@ -543,8 +820,20 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     def get_session_state(self) -> str:
         if not self.settings.has_alpaca_credentials:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.session.lookup.fallback",
+                    level="warning",
+                    outcome="fallback",
+                )
                 return "regular_open"
-            raise ValueError("Alpaca paper credentials are missing for broker clock checks")
+            message = "Alpaca paper credentials are missing for broker clock checks"
+            self._log_event(
+                "broker.session.lookup.failed",
+                level="error",
+                outcome="error",
+                detail=message,
+            )
+            raise ValueError(message)
         try:
             with self._client() as client:
                 response = client.get("/v2/clock")
@@ -556,7 +845,21 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             return self._session_state_from_timestamp(timestamp or datetime.now(UTC))
         except httpx.HTTPError as exc:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.session.lookup.fallback",
+                    level="warning",
+                    outcome="fallback",
+                    detail=self._extract_http_error_message(
+                        "Alpaca market clock lookup failed", exc
+                    ),
+                )
                 return "regular_open"
+            self._log_event(
+                "broker.session.lookup.failed",
+                level="error",
+                outcome="error",
+                detail=self._extract_http_error_message("Alpaca market clock lookup failed", exc),
+            )
             raise ValueError(
                 self._extract_http_error_message("Alpaca market clock lookup failed", exc)
             ) from exc
@@ -571,8 +874,20 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 return dict(payload)
         if not self.settings.has_alpaca_credentials:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.account.lookup.fallback",
+                    level="warning",
+                    outcome="fallback",
+                )
                 return None
-            raise ValueError("Alpaca paper credentials are missing for broker account lookup")
+            message = "Alpaca paper credentials are missing for broker account lookup"
+            self._log_event(
+                "broker.account.lookup.failed",
+                level="error",
+                outcome="error",
+                detail=message,
+            )
+            raise ValueError(message)
         try:
             with self._client() as client:
                 response = client.get("/v2/account")
@@ -580,7 +895,19 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 payload = response.json()
         except httpx.HTTPError as exc:
             if self.settings.allow_controller_mock:
+                self._log_event(
+                    "broker.account.lookup.fallback",
+                    level="warning",
+                    outcome="fallback",
+                    detail=self._extract_http_error_message("Alpaca account lookup failed", exc),
+                )
                 return None
+            self._log_event(
+                "broker.account.lookup.failed",
+                level="error",
+                outcome="error",
+                detail=self._extract_http_error_message("Alpaca account lookup failed", exc),
+            )
             raise ValueError(
                 self._extract_http_error_message("Alpaca account lookup failed", exc)
             ) from exc
