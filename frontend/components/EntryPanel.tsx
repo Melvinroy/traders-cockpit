@@ -1,5 +1,5 @@
 import { fp } from "@/lib/cockpit-ui";
-import type { EntryOrderDraft, EntryOrderType, OtoExitSide, OrderClass, SetupResponse, TimeInForce } from "@/lib/types";
+import type { EntryOrderDraft, EntryOrderType, EntrySide, OtoExitSide, OrderClass, SetupResponse, TimeInForce } from "@/lib/types";
 
 const ORDER_TYPE_OPTIONS: Array<{ value: EntryOrderType; label: string }> = [
   { value: "limit", label: "LIMIT" },
@@ -29,6 +29,11 @@ function tifAllowed(orderType: EntryOrderType, tif: TimeInForce) {
   return tif === "day" || tif === "gtc";
 }
 
+const SIDE_OPTIONS: Array<{ value: EntrySide; label: string }> = [
+  { value: "buy", label: "BUY" },
+  { value: "sell", label: "SELL" },
+];
+
 type Props = {
   ticker: string;
   setupLoadPending: boolean;
@@ -42,6 +47,7 @@ type Props = {
   entryPrice: number;
   stopRef: "lod" | "atr" | "manual";
   manualStop: number | null;
+  displayStopPrice: number | null;
   order: EntryOrderDraft;
   attachedSummary: { takeProfit: number | null; stopLoss: number | null };
   actionsDisabled?: boolean;
@@ -70,6 +76,7 @@ export function EntryPanel(props: Props) {
     entryPrice,
     stopRef,
     manualStop,
+    displayStopPrice,
     order,
     attachedSummary,
     actionsDisabled = false,
@@ -84,22 +91,30 @@ export function EntryPanel(props: Props) {
     onEnterTrade,
   } = props;
 
-  const stopPrice = stopRef === "manual" ? manualStop : stopRef === "atr" ? setup?.atrStop ?? null : setup?.lodStop ?? null;
+  const stopPrice = displayStopPrice;
   const cycleStopRef = () => {
     if (!setup) return;
+    const lodLikeValid = order.side === "sell" ? setup.hod > entryPrice : setup.lodStop < entryPrice;
+    const atrLikePrice = order.side === "sell"
+      ? Number((entryPrice + setup.atr14).toFixed(2))
+      : Number((entryPrice - setup.atr14).toFixed(2));
+    const atrLikeValid = atrLikePrice > 0 && (order.side === "sell" ? atrLikePrice > entryPrice : atrLikePrice < entryPrice);
     const availableRefs: Array<"lod" | "atr" | "manual"> = [
-      ...(setup.lodIsValid ? ["lod" as const] : []),
-      ...(setup.atrIsValid ? ["atr" as const] : []),
+      ...(lodLikeValid ? ["lod" as const] : []),
+      ...(atrLikeValid ? ["atr" as const] : []),
       "manual",
     ];
     const currentIndex = availableRefs.indexOf(stopRef);
     const nextRef = availableRefs[(currentIndex + 1 + availableRefs.length) % availableRefs.length] ?? "manual";
     onStopRefChange(nextRef);
   };
-  const stopRefLabel = stopRef === "lod" ? "LoD" : stopRef === "atr" ? "ATR" : "Manual";
+  const stopRefLabel = stopRef === "lod" ? (order.side === "sell" ? "HoD" : "LoD") : stopRef === "atr" ? "ATR" : "Manual";
   const showLimitInput = order.orderType === "limit" || order.orderType === "stop_limit";
   const showTriggerInput = order.orderType === "stop" || order.orderType === "stop_limit";
   const showAttachedSummary = order.orderClass !== "simple";
+  const entryFieldLabel = "Indicative";
+  const limitFieldLabel = "Order Price";
+  const triggerFieldLabel = "Trigger";
 
   return (
     <div className="panel entry-panel">
@@ -150,7 +165,22 @@ export function EntryPanel(props: Props) {
             </div>
             {setupLoadPending ? <div className="ticker-loading">SYNCING</div> : null}
             <div className="entry-order-field">
-              <span className="entry-order-label">Entry</span>
+              <span className="entry-order-label">Side</span>
+              <div className="entry-side-toggle" role="group" aria-label="Entry side">
+                {SIDE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`entry-side-btn ${order.side === option.value ? "active" : ""}`}
+                    onClick={() => onOrderChange({ ...order, side: option.value })}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="entry-order-field">
+              <span className="entry-order-label">{entryFieldLabel}</span>
               <input
                 id="heroEntry"
                 type="number"
@@ -163,9 +193,9 @@ export function EntryPanel(props: Props) {
                 Active stop:{" "}
                 {setup
                   ? stopRef === "lod"
-                    ? `LoD ${fp(setup.lodStop)}`
+                    ? `${order.side === "sell" ? "HoD" : "LoD"} ${fp(order.side === "sell" ? setup.hod : setup.lodStop)}`
                     : stopRef === "atr"
-                      ? `ATR ${fp(setup.atrStop)}`
+                      ? `ATR ${fp(stopPrice)}`
                       : manualStop !== null
                         ? `Manual ${fp(manualStop)}`
                         : "Manual required"
@@ -216,7 +246,7 @@ export function EntryPanel(props: Props) {
             </div>
             {showLimitInput ? (
               <div className="entry-order-field">
-                <span className="entry-order-label">Limit</span>
+                <span className="entry-order-label">{limitFieldLabel}</span>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -233,7 +263,7 @@ export function EntryPanel(props: Props) {
             ) : null}
             {showTriggerInput ? (
               <div className="entry-order-field">
-                <span className="entry-order-label">Trigger</span>
+                <span className="entry-order-label">{triggerFieldLabel}</span>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -260,7 +290,7 @@ export function EntryPanel(props: Props) {
           ) : (
             <>
               <div className="entry-row entry-row-labels">
-                <div className="entry-caption">Shares to Buy</div>
+                <div className="entry-caption">Shares</div>
                 <div className="entry-caption">Protective Stop</div>
                 <div className="entry-caption">Attached Exits</div>
               </div>

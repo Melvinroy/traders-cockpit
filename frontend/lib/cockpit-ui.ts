@@ -1,4 +1,4 @@
-import type { OrderView, PositionView, SetupResponse, StopMode, Tranche, TrancheMode } from "@/lib/types";
+import type { EntrySide, OrderView, PositionView, SetupResponse, StopMode, Tranche, TrancheMode } from "@/lib/types";
 
 export const ACTIVE_PHASES = ["entry_pending", "trade_entered", "protected", "P1_done", "P2_done", "runner_only"] as const;
 
@@ -56,6 +56,14 @@ export function sessionStateLabel(value: string | null | undefined): string {
 
 export function phaseLabel(phase: string): string {
   return PHASE_LABELS[phase] ?? phase.replaceAll("_", " ").toUpperCase();
+}
+
+export function entrySideFromSetup(setup: SetupResponse | null | undefined): EntrySide {
+  return setup?.entryOrder?.side === "sell" ? "sell" : "buy";
+}
+
+export function entryDirection(side: EntrySide): 1 | -1 {
+  return side === "sell" ? -1 : 1;
 }
 
 export function defaultAllocationPcts(count: number): number[] {
@@ -165,17 +173,22 @@ export function normalizeStopPcts(
   });
 }
 
-export function targetPrice(setup: SetupResponse, mode: TrancheMode): number | null {
+export function targetPrice(
+  setup: SetupResponse,
+  mode: TrancheMode,
+  side: EntrySide = entrySideFromSetup(setup),
+): number | null {
   if (mode.mode === "runner") return null;
   if (mode.target === "Manual") return mode.manualPrice;
   const multiplier = { "1R": 1, "2R": 2, "3R": 3 }[mode.target];
-  return Number((setup.entry + setup.perShareRisk * multiplier).toFixed(2));
+  return Number((setup.entry + entryDirection(side) * setup.perShareRisk * multiplier).toFixed(2));
 }
 
-export function trailingStop(livePrice: number, mode: TrancheMode): number {
+export function trailingStop(livePrice: number, mode: TrancheMode, side: EntrySide = "buy"): number {
+  const direction = entryDirection(side);
   return mode.trailUnit === "$"
-    ? Number((livePrice - mode.trail).toFixed(2))
-    : Number((livePrice * (1 - mode.trail / 100)).toFixed(2));
+    ? Number((livePrice - direction * mode.trail).toFixed(2))
+    : Number((livePrice * (1 - direction * (mode.trail / 100))).toFixed(2));
 }
 
 export function stopGroups(tranches: Tranche[], stopMode: number): Tranche[][] {
@@ -202,9 +215,11 @@ export function stopPlanRows(
   tranches: Tranche[],
   stopMode: number,
   stopModes: StopMode[],
-  orders: OrderView[]
+  orders: OrderView[],
+  side: EntrySide = entrySideFromSetup(setup),
 ): Array<{ label: string; qty: number; price: number; pct: number; mode: StopMode["mode"]; status: string; coveredTranches: string[] }> {
   if (!setup) return [];
+  const direction = entryDirection(side);
   const modeCount = stopMode || 3;
   const stopOrders = orders
     .filter((order) => order.type === "STOP")
@@ -245,14 +260,16 @@ export function stopPlanRows(
         trailUnit: "$" as const,
         label: `Tranche ${index + 1}`
       }));
-  const range = setup.entry - setup.finalStop;
+  const range = Math.abs(setup.entry - setup.finalStop);
   return stopGroups(previewTranches, modeCount).map((group, index) => {
     const config = stopModes[index] ?? { mode: "stop", pct: null };
     const autoPct = index === modeCount - 1
       ? 100 - Math.floor(100 / modeCount) * index
       : Math.floor(100 / modeCount);
     const pct = config.mode === "be" ? 0 : (config.pct ?? autoPct);
-    const price = config.mode === "be" ? setup.entry : Number((setup.entry - range * pct / 100).toFixed(2));
+    const price = config.mode === "be"
+      ? setup.entry
+      : Number((setup.entry - direction * range * pct / 100).toFixed(2));
     const qty = group.reduce((sum, tranche) => sum + tranche.qty, 0);
     const activeOrder = orders.find(
       (order) =>
@@ -303,6 +320,8 @@ export type RunningPnlSummary = {
 export function runningPnlSummary(position: PositionView | null, setup: SetupResponse | null): RunningPnlSummary | null {
   if (!position || !setup || position.phase === "entry_pending") return null;
   const entry = setup.entry;
+  const side = entrySideFromSetup(setup);
+  const direction = entryDirection(side);
   const totalShares = position.tranches.reduce((sum, tranche) => sum + tranche.qty, 0);
   const activeTranches = position.tranches.filter((tranche) => tranche.status === "active");
   const closedTranches = position.tranches.filter((tranche) => tranche.status === "sold");
@@ -318,7 +337,9 @@ export function runningPnlSummary(position: PositionView | null, setup: SetupRes
         return rightTime.localeCompare(leftTime);
       })[0];
     const exitPrice = tranche.exitPrice ?? fillOrder?.fillPrice ?? tranche.target ?? null;
-    const pnl = exitPrice !== null ? Number(((exitPrice - entry) * tranche.qty).toFixed(2)) : 0;
+    const pnl = exitPrice !== null
+      ? Number((((exitPrice - entry) * direction) * tranche.qty).toFixed(2))
+      : 0;
     const exitOrderType = tranche.exitOrderType ?? fillOrder?.type ?? null;
     const label = exitOrderType === "STOP"
       ? `Stop hit · ${tranche.id}`
@@ -335,9 +356,12 @@ export function runningPnlSummary(position: PositionView | null, setup: SetupRes
   });
 
   const realizedPnl = Number(filledLegs.reduce((sum, leg) => sum + leg.pnl, 0).toFixed(2));
-  const unrealizedPnl = Number(((position.livePrice - entry) * remainingShares).toFixed(2));
+  const unrealizedPnl = Number((((position.livePrice - entry) * direction) * remainingShares).toFixed(2));
   const openRisk = Number(
-    activeTranches.reduce((sum, tranche) => sum + Math.max(0, (entry - tranche.stop) * tranche.qty), 0).toFixed(2)
+    activeTranches.reduce(
+      (sum, tranche) => sum + Math.max(0, ((entry - tranche.stop) * direction) * tranche.qty),
+      0,
+    ).toFixed(2)
   );
 
   return {

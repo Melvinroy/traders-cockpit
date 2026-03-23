@@ -134,8 +134,8 @@ class CockpitService:
         order = self._normalize_entry_order(payload.order, payload.entry, payload.stopPrice)
         self._validate_entry_order(order, setup.sessionState)
         preview_entry = self._preview_entry_price(payload.entry, order)
-        self._validate_stop(preview_entry, payload.stopPrice)
-        per_share_risk = round(preview_entry - payload.stopPrice, 2)
+        self._validate_stop(preview_entry, payload.stopPrice, order.side)
+        per_share_risk = self._risk_per_share(preview_entry, payload.stopPrice, order.side)
         shares = self._calculate_shares(
             setup.accountEquity,
             setup.accountBuyingPower,
@@ -148,7 +148,7 @@ class CockpitService:
             db,
             payload.symbol.upper(),
             "info",
-            f"Preview: {payload.symbol.upper()} buy {shares} sh {order.orderType.upper()} {order.timeInForce.upper()} @ {preview_entry:.2f} stop {payload.stopPrice:.2f}",
+            f"Preview: {payload.symbol.upper()} {order.side.upper()} {shares} sh {order.orderType.upper()} {order.timeInForce.upper()} @ {preview_entry:.2f} stop {payload.stopPrice:.2f}",
         )
         db.commit()
         return TradePreviewResponse(
@@ -170,14 +170,15 @@ class CockpitService:
         order = self._normalize_entry_order(payload.order, payload.entry, payload.stopPrice)
         self._validate_entry_order(order, setup.sessionState)
         preview_entry = self._preview_entry_price(payload.entry, order)
-        self._validate_stop(preview_entry, payload.stopPrice)
+        self._validate_stop(preview_entry, payload.stopPrice, order.side)
         self._validate_tranche_modes(payload.trancheCount, payload.trancheModes)
+        per_share_risk = self._risk_per_share(preview_entry, payload.stopPrice, order.side)
         shares = self._calculate_shares(
             setup.accountEquity,
             setup.accountBuyingPower,
             preview_entry,
             setup.riskPct,
-            round(preview_entry - payload.stopPrice, 2),
+            per_share_risk,
         )
         if shares <= 0:
             raise ValueError(
@@ -214,7 +215,7 @@ class CockpitService:
             entry_message = "Extended-hours limit order submitted."
         else:
             entry_message = (
-                f"Trade entered: Buy {shares} sh {symbol} {order_for_broker.order_type.upper()} "
+                f"Trade entered: {order_for_broker.side.upper()} {shares} sh {symbol} {order_for_broker.order_type.upper()} "
                 f"{order_for_broker.time_in_force.upper()} @ {preview_entry:.2f}"
             )
         tranches = [
@@ -312,7 +313,10 @@ class CockpitService:
         )
         self._validate_stop_mode(payload.stopMode, payload.stopModes)
         self._reject_duplicate_active_stops(db, position.symbol)
-        stop_range = round(position.entry_price - position.stop_price, 2)
+        position_side = self._position_side(position)
+        exit_side = self._exit_side(position_side)
+        direction = 1 if position_side == "buy" else -1
+        stop_range = abs(round(position.entry_price - position.stop_price, 2))
         current_tranches = deepcopy(position.tranches)
         for index, group in enumerate(self._stop_groups(current_tranches, payload.stopMode)):
             config = payload.stopModes[index]
@@ -320,12 +324,12 @@ class CockpitService:
             price = (
                 position.entry_price
                 if config.mode == "be"
-                else round(position.entry_price - stop_range * pct / 100.0, 2)
+                else round(position.entry_price - direction * stop_range * pct / 100.0, 2)
             )
-            self._validate_stop(position.entry_price, price)
+            self._validate_stop(position.entry_price, price, position_side)
             qty = sum(item["qty"] for item in group)
             covered = [item["id"] for item in group]
-            broker = self.broker.place_stop_order(position.symbol, qty, price)
+            broker = self.broker.place_stop_order(position.symbol, qty, price, side=exit_side)
             db.add(
                 OrderEntity(
                     order_id=self._next_order_id(db),
@@ -372,7 +376,9 @@ class CockpitService:
         self._ensure_profit_actionable(position)
         self._validate_tranche_modes(position.tranche_count, payload.trancheModes)
         tranches = deepcopy(position.tranches)
-        per_share_risk = round(position.entry_price - position.stop_price, 2)
+        position_side = self._position_side(position)
+        exit_side = self._exit_side(position_side)
+        per_share_risk = abs(round(position.entry_price - position.stop_price, 2))
         phase = position.phase
         executed_count = 0
         self._cancel_broker_exit_orders(db, position.symbol, {"STOP"})
@@ -382,11 +388,13 @@ class CockpitService:
             mode = payload.trancheModes[index]
             if mode.mode == "runner":
                 self._reject_duplicate_active_order(db, position.symbol, tranche["id"], "TRAIL")
-                runner_stop = self._trail_stop(position.live_price, mode.trail, mode.trailUnit)
+                runner_stop = self._trail_stop(
+                    position.live_price, mode.trail, mode.trailUnit, position_side
+                )
                 tranche["mode"] = "runner"
                 tranche["runnerStop"] = runner_stop
                 broker = self.broker.place_trailing_stop(
-                    position.symbol, tranche["qty"], mode.trail, mode.trailUnit
+                    position.symbol, tranche["qty"], mode.trail, mode.trailUnit, side=exit_side
                 )
                 db.add(
                     OrderEntity(
@@ -407,8 +415,12 @@ class CockpitService:
                 phase = "runner_only"
             else:
                 self._reject_duplicate_active_order(db, position.symbol, tranche["id"], "LMT")
-                target = self._resolve_target_price(position.entry_price, per_share_risk, mode)
-                broker = self.broker.place_limit_order(position.symbol, tranche["qty"], target)
+                target = self._resolve_target_price(
+                    position.entry_price, per_share_risk, mode, position_side
+                )
+                broker = self.broker.place_limit_order(
+                    position.symbol, tranche["qty"], target, side=exit_side
+                )
                 db.add(
                     OrderEntity(
                         order_id=self._next_order_id(db),
@@ -596,11 +608,16 @@ class CockpitService:
                 .where(OrderEntity.symbol == symbol.upper())
                 .order_by(OrderEntity.created_at.asc())
             ).all()
-        return [self._order_view(row) for row in rows]
+        position_side = self._position_side(position)
+        return [self._order_view(row, position_side=position_side) for row in rows]
 
     def get_recent_orders(self, db: Session, limit: int = 50) -> list[OrderView]:
         broker_orders_by_symbol = self._recent_broker_orders_by_symbol(limit=max(limit, 100))
         self._reconcile_all_positions(db, broker_orders_by_symbol)
+        position_side_by_symbol = {
+            position.symbol.upper(): self._position_side(position)
+            for position in db.scalars(select(PositionEntity)).all()
+        }
         try:
             broker_payloads = self.broker.list_recent_orders(limit=limit)
         except ValueError:
@@ -619,7 +636,13 @@ class CockpitService:
             broker_payload = broker_orders.get(row.broker_order_id or "")
             if broker_payload is not None:
                 seen_broker_ids.add(str(broker_payload.get("id")))
-            merged.append(self._order_view(row, broker_payload))
+            merged.append(
+                self._order_view(
+                    row,
+                    broker_payload,
+                    position_side=position_side_by_symbol.get(row.symbol.upper(), "buy"),
+                )
+            )
         for broker_order_id, broker_payload in broker_orders.items():
             if broker_order_id in seen_broker_ids:
                 continue
@@ -658,8 +681,13 @@ class CockpitService:
             )
         db.commit()
         local = local_orders[0] if local_orders else None
+        local_position = (
+            db.scalar(select(PositionEntity).where(PositionEntity.symbol == local.symbol))
+            if local is not None
+            else None
+        )
         return (
-            self._order_view(local, refreshed)
+            self._order_view(local, refreshed, position_side=self._position_side(local_position))
             if local is not None
             else self._broker_order_view(refreshed)
         )
@@ -807,7 +835,11 @@ class CockpitService:
             return None
         if position.phase == "entry_pending":
             return None
-        if position.live_price > order.price:
+        position_side = self._position_side(position)
+        if position_side == "sell":
+            if position.live_price < order.price:
+                return None
+        elif position.live_price > order.price:
             return None
         return {
             "status": "FILLED",
@@ -885,6 +917,27 @@ class CockpitService:
         if sold_count >= 1:
             return "P1_done"
         return "protected"
+
+    def _position_side(self, position: PositionEntity | PositionView | dict | None) -> str:
+        if position is None:
+            return "buy"
+        if isinstance(position, dict):
+            setup_snapshot = position.get("setup") or position.get("setup_snapshot") or {}
+        else:
+            setup_snapshot = getattr(position, "setup_snapshot", None) or getattr(
+                position, "setup", {}
+            )
+        if isinstance(setup_snapshot, dict):
+            entry_order = setup_snapshot.get("entryOrder")
+            if isinstance(entry_order, dict) and entry_order.get("side") == "sell":
+                return "sell"
+        return "buy"
+
+    def _exit_side(self, side: str) -> str:
+        return "buy" if side == "sell" else "sell"
+
+    def _risk_per_share(self, entry: float, stop_price: float, side: str) -> float:
+        return round((stop_price - entry) if side == "sell" else (entry - stop_price), 2)
 
     def _build_setup_response(
         self,
@@ -1071,18 +1124,22 @@ class CockpitService:
         return float(100 - base * index) if index == stop_mode - 1 else float(base)
 
     def _resolve_target_price(
-        self, entry: float, per_share_risk: float, mode: TrancheMode
+        self, entry: float, per_share_risk: float, mode: TrancheMode, side: str = "buy"
     ) -> float:
         if mode.target == "Manual" and mode.manualPrice is not None:
             return round(mode.manualPrice, 2)
         multiplier = {"1R": 1, "2R": 2, "3R": 3}[mode.target]
-        return round(entry + per_share_risk * multiplier, 2)
+        direction = -1 if side == "sell" else 1
+        return round(entry + direction * per_share_risk * multiplier, 2)
 
-    def _trail_stop(self, live_price: float, trail: float, trail_unit: str) -> float:
+    def _trail_stop(
+        self, live_price: float, trail: float, trail_unit: str, side: str = "buy"
+    ) -> float:
+        direction = -1 if side == "sell" else 1
         return (
-            round(live_price - trail, 2)
+            round(live_price - direction * trail, 2)
             if trail_unit == "$"
-            else round(live_price * (1 - trail / 100), 2)
+            else round(live_price * (1 - direction * trail / 100), 2)
         )
 
     def _reduce_stop_orders(self, db: Session, symbol: str, tranche_id: str, qty_sold: int) -> None:
@@ -1119,6 +1176,8 @@ class CockpitService:
         self, order: EntryOrderDraft, entry: float, protective_stop: float
     ) -> EntryOrderDraft:
         normalized = order.model_copy(deep=True)
+        direction = -1 if normalized.side == "sell" else 1
+        protective_risk = max(abs(entry - protective_stop), 0.01)
         if normalized.orderType in {"limit", "stop_limit"} and normalized.limitPrice is None:
             normalized.limitPrice = round(entry, 2)
         if normalized.orderType == "stop" and normalized.stopPrice is None:
@@ -1127,7 +1186,7 @@ class CockpitService:
             normalized.stopPrice = round(entry, 2)
         if normalized.orderClass in {"bracket", "oco"}:
             normalized.takeProfit = normalized.takeProfit or TakeProfitDraft(
-                limitPrice=round(entry + max(entry - protective_stop, 0.01), 2)
+                limitPrice=round(entry + direction * protective_risk, 2)
             )
             normalized.stopLoss = normalized.stopLoss or StopLossDraft(
                 stopPrice=protective_stop, limitPrice=None
@@ -1135,7 +1194,7 @@ class CockpitService:
         if normalized.orderClass == "oto":
             if normalized.otoExitSide == "take_profit":
                 normalized.takeProfit = normalized.takeProfit or TakeProfitDraft(
-                    limitPrice=round(entry + max(entry - protective_stop, 0.01), 2)
+                    limitPrice=round(entry + direction * protective_risk, 2)
                 )
                 normalized.stopLoss = None
             else:
@@ -1233,7 +1292,7 @@ class CockpitService:
         return BrokerEntryOrder(
             symbol=symbol,
             qty=shares,
-            side="buy",
+            side=order.side,
             order_type=order_type,
             time_in_force=tif,
             limit_price=limit_price,
@@ -1268,11 +1327,15 @@ class CockpitService:
             "stop_limit": "STPLMT",
         }[order.orderType]
 
-    def _validate_stop(self, entry: float, stop_price: float) -> None:
-        if stop_price >= entry:
-            raise ValueError("Stop price must be below entry")
-        if stop_price <= entry * 0.5:
-            raise ValueError("Stop price too far below entry")
+    def _validate_stop(self, entry: float, stop_price: float, side: str = "buy") -> None:
+        if side == "sell":
+            if stop_price <= entry:
+                raise ValueError("Stop price must be above entry for short positions")
+        else:
+            if stop_price >= entry:
+                raise ValueError("Stop price must be below entry")
+        if abs(stop_price - entry) >= entry * 0.5:
+            raise ValueError("Stop price is too far from entry")
 
     def _validate_stop_mode(self, stop_mode: int, stop_modes: list[StopMode]) -> None:
         if stop_mode not in {1, 2, 3}:
@@ -1497,7 +1560,12 @@ class CockpitService:
         next_seq = max(persisted_max, pending_max) + 1
         return f"ORD-{next_seq:04d}"
 
-    def _order_view(self, row: OrderEntity, broker_payload: dict | None = None) -> OrderView:
+    def _order_view(
+        self,
+        row: OrderEntity,
+        broker_payload: dict | None = None,
+        position_side: str = "buy",
+    ) -> OrderView:
         filled_qty = (
             self._broker_filled_qty(broker_payload)
             if broker_payload
@@ -1506,7 +1574,7 @@ class CockpitService:
         remaining_qty = self._broker_remaining_qty(
             broker_payload, row.qty, row.orig_qty, filled_qty
         )
-        side = self._broker_side(broker_payload) or self._local_order_side(row)
+        side = self._broker_side(broker_payload) or self._local_order_side(row, position_side)
         status = (
             str(broker_payload.get("status", row.status)).upper() if broker_payload else row.status
         )
@@ -1600,10 +1668,12 @@ class CockpitService:
 
     def _pnl(self, position: PositionView) -> float:
         entry = float(position.setup.get("entry", 0.0))
+        side = self._position_side(position)
+        direction = -1 if side == "sell" else 1
         active_shares = sum(
             tranche.qty for tranche in position.tranches if tranche.status == "active"
         )
-        return round((position.livePrice - entry) * active_shares, 2)
+        return round((position.livePrice - entry) * direction * active_shares, 2)
 
     def _broker_timestamp(self, payload: dict | None, key: str) -> datetime | None:
         if not payload:
@@ -1673,10 +1743,10 @@ class CockpitService:
         side = payload.get("side")
         return str(side).upper() if side else None
 
-    def _local_order_side(self, row: OrderEntity) -> str:
+    def _local_order_side(self, row: OrderEntity, position_side: str = "buy") -> str:
         if row.parent_id is None:
-            return "BUY"
-        return "SELL"
+            return position_side.upper()
+        return self._exit_side(position_side).upper()
 
     def _broker_order_cancelable(self, payload: dict | None) -> bool:
         if not payload:

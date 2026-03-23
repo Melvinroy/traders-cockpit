@@ -43,14 +43,24 @@ class BrokerAdapter:
             )
         )
 
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
         raise NotImplementedError
 
-    def place_limit_order(self, symbol: str, qty: int, limit_price: float) -> BrokerOrderResult:
+    def place_limit_order(
+        self,
+        symbol: str,
+        qty: int,
+        limit_price: float,
+        side: str = "sell",
+        time_in_force: str = "gtc",
+        extended_hours: bool = False,
+    ) -> BrokerOrderResult:
         raise NotImplementedError
 
     def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
     ) -> BrokerOrderResult:
         raise NotImplementedError
 
@@ -100,14 +110,24 @@ class PaperBrokerAdapter(BrokerAdapter):
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="FILLED")
 
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="ACTIVE")
 
-    def place_limit_order(self, symbol: str, qty: int, limit_price: float) -> BrokerOrderResult:
+    def place_limit_order(
+        self,
+        symbol: str,
+        qty: int,
+        limit_price: float,
+        side: str = "sell",
+        time_in_force: str = "gtc",
+        extended_hours: bool = False,
+    ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="FILLED")
 
     def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
     ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="ACTIVE")
 
@@ -251,7 +271,9 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             )
         )
 
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
                 "ACTIVE", "Alpaca paper credentials are missing for stop execution"
@@ -260,7 +282,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             BrokerEntryOrder(
                 symbol=symbol,
                 qty=qty,
-                side="sell",
+                side=side,
                 order_type="stop",
                 stop_price=stop_price,
                 time_in_force="gtc",
@@ -294,7 +316,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         )
 
     def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
@@ -303,7 +325,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         payload = {
             "symbol": symbol,
             "qty": qty,
-            "side": "sell",
+            "side": side,
             "type": "trailing_stop",
             "time_in_force": "gtc",
         }

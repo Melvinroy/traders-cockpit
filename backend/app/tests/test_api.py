@@ -97,6 +97,23 @@ def tranche_modes() -> list[dict]:
     ]
 
 
+def simple_entry_order(side: str = "buy", **overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "side": side,
+        "orderType": "limit",
+        "timeInForce": "day",
+        "orderClass": "simple",
+        "extendedHours": False,
+        "limitPrice": None,
+        "stopPrice": None,
+        "otoExitSide": "stop_loss",
+        "takeProfit": None,
+        "stopLoss": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_setup_endpoint_returns_contract() -> None:
     response = client.get("/api/setup/AAPL")
     assert response.status_code == 200
@@ -517,6 +534,107 @@ def test_trade_lifecycle() -> None:
         or order.get("parentId") == profit_state["rootOrderId"]
         for order in profit_state["orders"]
     )
+
+
+def test_preview_trade_supports_sell_side_and_rejects_invalid_short_stop() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    short_stop = round(max(setup["hod"], setup["entry"] + 1), 2)
+
+    preview = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": short_stop,
+            "riskPct": 0.2,
+            "order": simple_entry_order("sell", timeInForce="gtc", limitPrice=setup["entry"]),
+        },
+    )
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["perShareRisk"] == round(short_stop - setup["entry"], 2)
+    assert payload["shares"] > 0
+
+    invalid = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 0.2,
+            "order": simple_entry_order("sell", limitPrice=setup["entry"]),
+        },
+    )
+    assert invalid.status_code == 400
+    assert "above entry for short positions" in invalid.text
+
+
+def test_short_trade_uses_buy_to_cover_for_stops_and_profit_orders() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    short_stop = round(max(setup["hod"], setup["entry"] + 1), 2)
+
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": short_stop,
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+            "order": simple_entry_order("sell", limitPrice=setup["entry"]),
+        },
+    )
+    assert enter.status_code == 200
+    position = enter.json()
+    assert position["phase"] == "trade_entered"
+    root_order = next(
+        order for order in position["orders"] if order["id"] == position["rootOrderId"]
+    )
+    assert root_order["side"] == "SELL"
+
+    stops = client.post(
+        "/api/trade/stops",
+        json={
+            "symbol": "AAPL",
+            "stopMode": 3,
+            "stopModes": [
+                {"mode": "stop", "pct": 33.0},
+                {"mode": "stop", "pct": 66.0},
+                {"mode": "stop", "pct": 100.0},
+            ],
+        },
+    )
+    assert stops.status_code == 200
+    protected = stops.json()
+    stop_orders = [order for order in protected["orders"] if order["type"] == "STOP"]
+    assert len(stop_orders) == 3
+    assert all(order["side"] == "BUY" for order in stop_orders)
+    assert all(order["price"] > protected["setup"]["entry"] for order in stop_orders)
+
+    profit = client.post(
+        "/api/trade/profit",
+        json={"symbol": "AAPL", "trancheModes": tranche_modes()},
+    )
+    assert profit.status_code == 200
+    profit_state = profit.json()
+    filled_limits = [
+        order
+        for order in profit_state["orders"]
+        if order["type"] == "LMT" and order.get("parentId") == profit_state["rootOrderId"]
+    ]
+    assert filled_limits
+    assert all(order["side"] == "BUY" for order in filled_limits)
 
 
 def test_three_stop_mode_defaults_to_33_33_34_when_pct_is_blank() -> None:

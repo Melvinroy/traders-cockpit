@@ -1,7 +1,7 @@
 "use client";
 
 import type { PositionView } from "@/lib/types";
-import { activeShares, isActivePhase, signedMoney } from "@/lib/cockpit-ui";
+import { activeShares, entryDirection, entrySideFromSetup, isActivePhase, signedMoney } from "@/lib/cockpit-ui";
 
 type Props = {
   positions: PositionView[];
@@ -36,7 +36,7 @@ export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) 
             {openPositions.map((position) => {
               const live = position.livePrice || position.setup.entry;
               const activeQty = activeShares(position);
-              const pnl = (live - position.setup.entry) * activeQty;
+              const pnl = (live - position.setup.entry) * entryDirection(entrySideFromSetup(position.setup)) * activeQty;
               const stopEnabled = position.stopMode > 0;
               const isProfitEnabled = profitEnabled(position, activeSymbol);
               const isSelected = position.symbol === activeSymbol;
