@@ -26,13 +26,34 @@ def me(request: Request) -> LoginResponse:
 
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, request: Request, response: Response) -> LoginResponse:
+    ip_addr = request.client.host if request.client else None
+    is_allowed, retry_after = auth_store.check_login_allowed(
+        username=payload.username,
+        ip_addr=ip_addr,
+    )
+    if not is_allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts. Try again in {retry_after} seconds.",
+        )
+
     user = auth_store.authenticate(username=payload.username, password=payload.password)
     if user is None:
+        is_allowed, retry_after = auth_store.record_login_failure(
+            username=payload.username,
+            ip_addr=ip_addr,
+        )
+        if not is_allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many login attempts. Try again in {retry_after} seconds.",
+            )
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    auth_store.clear_login_failures(username=payload.username, ip_addr=ip_addr)
     session_token, session_data = auth_store.create_session(
         user=user,
         user_agent=request.headers.get("user-agent"),
-        ip_addr=request.client.host if request.client else None,
+        ip_addr=ip_addr,
     )
     response.set_cookie(
         settings.auth_cookie_name,
