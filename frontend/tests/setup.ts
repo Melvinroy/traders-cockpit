@@ -35,6 +35,8 @@ Object.defineProperty(globalThis, "fetch", {
           }
           : url.includes("/api/positions")
           ? []
+          : url.includes("/api/orders")
+            ? []
           : url.includes("/api/activity-log")
             ? []
             : {

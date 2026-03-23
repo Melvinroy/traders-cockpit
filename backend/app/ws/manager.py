@@ -12,7 +12,9 @@ from redis.asyncio import Redis
 
 
 class WebSocketManager:
-    def __init__(self, redis_url: str | None = None, channel_prefix: str = "traders-cockpit") -> None:
+    def __init__(
+        self, redis_url: str | None = None, channel_prefix: str = "traders-cockpit"
+    ) -> None:
         self.connections: dict[str, set[WebSocket]] = defaultdict(set)
         self._lock = asyncio.Lock()
         self._redis_url = redis_url

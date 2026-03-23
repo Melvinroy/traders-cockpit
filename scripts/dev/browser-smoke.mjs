@@ -4,9 +4,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const frontendUrl = process.env.FRONTEND_URL || "http://127.0.0.1:3010";
+const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8010";
 const smokeLabel = (process.env.BROWSER_SMOKE_LABEL || "browser-smoke")
   .toLowerCase()
   .replace(/[^a-z0-9-_]+/g, "-");
+const qcSymbol = (process.env.QC_SYMBOL || "MSFT").trim().toUpperCase() || "MSFT";
 const outputDir = path.resolve(process.cwd(), "output", "playwright");
 const screenshotPath = path.join(outputDir, `${smokeLabel}.png`);
 const consolePath = path.join(outputDir, `${smokeLabel}.console.txt`);
@@ -47,6 +49,66 @@ async function loginIfNeeded(page) {
   return true;
 }
 
+async function seedAuthSession(page) {
+  const response = await fetch(`${backendUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: authUsername, password: authPassword }),
+  });
+  if (!response.ok) {
+    throw new Error(`Unable to authenticate against ${backendUrl} for browser smoke.`);
+  }
+  const rawCookie = response.headers.get("set-cookie");
+  if (!rawCookie) {
+    throw new Error("Missing auth cookie from backend login.");
+  }
+  const [cookiePair] = rawCookie.split(";");
+  const separator = cookiePair.indexOf("=");
+  const cookieName = cookiePair.slice(0, separator);
+  const cookieValue = cookiePair.slice(separator + 1);
+  const frontend = new URL(frontendUrl);
+  await page.context().addCookies([
+    {
+      name: cookieName,
+      value: cookieValue,
+      domain: frontend.hostname,
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+}
+
+async function ensureCockpitReady(page) {
+  const setupParameters = page.getByText("Setup Parameters");
+  const loginTitle = page.getByText("Session Required");
+  await Promise.race([
+    setupParameters.waitFor({ timeout: 15000 }),
+    loginTitle.waitFor({ timeout: 15000 }),
+  ]);
+  const loggedIn = await loginIfNeeded(page);
+  if (!loggedIn) {
+    await setupParameters.waitFor({ timeout: 15000 });
+  }
+  return loggedIn;
+}
+
+async function loadSetup(page) {
+  const symbolInput = page.locator("#tickerInput");
+  await symbolInput.waitFor({ state: "visible", timeout: 15000 });
+  await symbolInput.fill(qcSymbol);
+  await page.waitForFunction(
+    (value) => {
+      const input = document.querySelector("#tickerInput");
+      return input instanceof HTMLInputElement && input.value === value;
+    },
+    qcSymbol,
+    { timeout: 5000 }
+  );
+  await symbolInput.press("Enter");
+  await page.waitForTimeout(800);
+}
+
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
 
@@ -78,6 +140,7 @@ page.on("requestfailed", (request) => {
 
 try {
   await fs.mkdir(outputDir, { recursive: true });
+  await seedAuthSession(page);
 
   const response = await page.goto(frontendUrl, { waitUntil: "networkidle" });
   if (!response || response.status() >= 400) {
@@ -89,14 +152,14 @@ try {
     throw new Error(`Unexpected page title: ${title}`);
   }
 
-  const loggedIn = await loginIfNeeded(page);
+  const loggedIn = await ensureCockpitReady(page);
   if (loggedIn) {
     consoleMessages.length = 0;
     requestLog.length = 0;
     requestFailures.length = 0;
     pageErrors.length = 0;
   }
-  await page.getByRole("button", { name: /LOAD SETUP/ }).click();
+  await loadSetup(page);
   await page.getByText("SETUP LOADED").waitFor({ timeout: 15000 });
   await page.getByText("Suggested Entry").waitFor({ timeout: 15000 });
   await page.getByText("Stop Plan").waitFor({ timeout: 15000 });

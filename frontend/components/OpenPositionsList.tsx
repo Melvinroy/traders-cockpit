@@ -1,5 +1,7 @@
+"use client";
+
 import type { PositionView } from "@/lib/types";
-import { activeShares, fp, isActivePhase, phaseLabel, signedMoney } from "@/lib/cockpit-ui";
+import { activeShares, isActivePhase, signedMoney } from "@/lib/cockpit-ui";
 
 type Props = {
   positions: PositionView[];
@@ -14,83 +16,58 @@ function profitEnabled(position: PositionView, activeSymbol: string): boolean {
 
 export function OpenPositionsList({ positions, activeSymbol, onSelect }: Props) {
   const openPositions = positions.filter((position) => isActivePhase(position.phase));
-  if (!openPositions.length) {
-    return null;
-  }
 
   return (
     <div className="open-positions-section">
-      <div className="op-section-label">
-        <span>
-          Open Positions <span className="op-count">({openPositions.length})</span>
-        </span>
-        <span className="op-live-badge">{"\u25CF"} LIVE</span>
-      </div>
-      {openPositions.map((position) => {
-        const live = position.livePrice || position.setup.entry;
-        const activeQty = activeShares(position);
-        const pnl = (live - position.setup.entry) * activeQty;
-        const stopEnabled = position.stopMode > 0;
-        const isProfitEnabled = profitEnabled(position, activeSymbol);
-        const isActive = position.symbol === activeSymbol;
+      {!openPositions.length ? (
+        <div className="empty-state op-empty-state">
+          <div className="empty-icon">{"\u25C8"}</div>
+          No open positions
+        </div>
+      ) : (
+        <>
+          <div className="op-list-header" aria-hidden="true">
+            <span className="op-list-heading">Symbol</span>
+            <span className="op-list-heading op-list-heading-pnl">U P&amp;L</span>
+            <span className="op-list-heading op-list-heading-badge">S</span>
+            <span className="op-list-heading op-list-heading-badge">P</span>
+          </div>
+          <div className="op-list">
+            {openPositions.map((position) => {
+              const live = position.livePrice || position.setup.entry;
+              const activeQty = activeShares(position);
+              const pnl = (live - position.setup.entry) * activeQty;
+              const stopEnabled = position.stopMode > 0;
+              const isProfitEnabled = profitEnabled(position, activeSymbol);
+              const isSelected = position.symbol === activeSymbol;
 
-        return (
-          <button
-            key={position.symbol}
-            type="button"
-            className={`op-card ${isActive ? "expanded" : ""}`}
-            onClick={() => onSelect(position.symbol)}
-          >
-            <div className="op-card-header">
-              <div className="op-top-row">
-                <span className="op-symbol">{position.symbol}</span>
-                <span className={`op-pnl ${pnl >= 0 ? "op-pnl-pos" : "op-pnl-neg"}`}>{signedMoney(pnl)}</span>
-              </div>
-              <div className="op-metrics-row">
-                <div className="op-metric">
-                  <span className="op-key">ENTRY</span>
-                  <br />
-                  <span className="op-val">{fp(position.setup.entry)}</span>
-                </div>
-                <div className="op-metric">
-                  <span className="op-key">LIVE</span>
-                  <br />
-                  <span className="op-val">{fp(live)}</span>
-                </div>
-                <div className="op-status-wrap">
-                  <span className={`op-badge ${stopEnabled ? "op-badge-live" : "op-badge-danger"}`}>STOP {stopEnabled ? "SET" : "\u2014"}</span>
-                  <span className={`op-badge ${isProfitEnabled ? "op-badge-info" : "op-badge-off"}`}>PROFIT {isProfitEnabled ? "ON" : "\u2014"}</span>
-                </div>
-              </div>
-              {isActive ? (
-                <div className="op-expand">
-                  <div>
-                    <div className="op-expand-label">Tranches</div>
-                    <div className="op-tranche-pills">
-                      {position.tranches.map((tranche) => {
-                        const pillClass = tranche.status === "sold"
-                          ? "op-pill-sold"
-                          : tranche.mode === "runner"
-                            ? "op-pill-runner"
-                            : "op-pill-active";
-                        return (
-                          <span key={tranche.id} className={`op-pill ${pillClass}`}>
-                            {tranche.id}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="op-expand-label">Phase</div>
-                    <div className="op-val">{phaseLabel(position.phase)}</div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </button>
-        );
-      })}
+              return (
+                <button
+                  key={position.symbol}
+                  type="button"
+                  className={`op-row ${isSelected ? "active" : ""}`}
+                  onClick={() => onSelect(position.symbol)}
+                >
+                  <span className="op-row-symbol">{position.symbol}</span>
+                  <span className={`op-row-pnl ${pnl >= 0 ? "op-pnl-pos" : "op-pnl-neg"}`}>{signedMoney(pnl)}</span>
+                  <span
+                    className={`op-badge op-badge-letter ${stopEnabled ? "op-badge-live" : "op-badge-danger"}`}
+                    title={stopEnabled ? "Stop protection active" : "No stop protection active"}
+                  >
+                    S
+                  </span>
+                  <span
+                    className={`op-badge op-badge-letter ${isProfitEnabled ? "op-badge-info" : "op-badge-off"}`}
+                    title={isProfitEnabled ? "Profit taking active" : "No profit taking active"}
+                  >
+                    P
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
