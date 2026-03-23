@@ -106,22 +106,34 @@ class Settings:
             "testing": "test",
         }.get(app_env_raw, "development")
         app_default_role_raw = os.getenv("APP_DEFAULT_ROLE", "admin").strip().lower()
-        app_default_role = app_default_role_raw if app_default_role_raw in {"admin", "trader"} else "admin"
+        app_default_role = (
+            app_default_role_raw if app_default_role_raw in {"admin", "trader"} else "admin"
+        )
         allow_role_override_default = "false" if app_env == "production" else "true"
-        allow_role_override = _as_bool(os.getenv("APP_ALLOW_ROLE_OVERRIDE", allow_role_override_default))
+        allow_role_override = _as_bool(
+            os.getenv("APP_ALLOW_ROLE_OVERRIDE", allow_role_override_default)
+        )
         require_ops_auth_default = "true" if app_env == "production" else "false"
         require_ops_auth = _as_bool(os.getenv("OPS_REQUIRE_AUTH", require_ops_auth_default))
-        sqlite_fallback_url = os.getenv("SQLITE_FALLBACK_URL", "sqlite:///./data/traders_cockpit.db").strip()
+        sqlite_fallback_url = os.getenv(
+            "SQLITE_FALLBACK_URL", "sqlite:///./data/traders_cockpit.db"
+        ).strip()
         allow_sqlite_fallback = _as_bool(os.getenv("ALLOW_SQLITE_FALLBACK", "false"))
         auth_db_path = os.getenv("AUTH_DB_PATH", "./data/auth.db").strip() or "./data/auth.db"
         auth_cookie_secure_default = "true" if app_env in {"staging", "production"} else "false"
         auth_cookie_samesite_default = "none" if app_env in {"staging", "production"} else "lax"
-        auth_cookie_samesite_raw = os.getenv("AUTH_COOKIE_SAMESITE", auth_cookie_samesite_default).strip().lower()
-        auth_cookie_samesite = auth_cookie_samesite_raw if auth_cookie_samesite_raw in {"lax", "strict", "none"} else auth_cookie_samesite_default
+        auth_cookie_samesite_raw = (
+            os.getenv("AUTH_COOKIE_SAMESITE", auth_cookie_samesite_default).strip().lower()
+        )
+        auth_cookie_samesite = (
+            auth_cookie_samesite_raw
+            if auth_cookie_samesite_raw in {"lax", "strict", "none"}
+            else auth_cookie_samesite_default
+        )
         default_db = (
             sqlite_fallback_url
             if app_env == "test" or allow_sqlite_fallback
-            else "postgresql://traders_cockpit:change-me-postgres@127.0.0.1:55432/traders_cockpit"
+            else "postgresql://traders_cockpit:traders_cockpit@127.0.0.1:55432/traders_cockpit"
         )
         return cls(
             app_env=app_env,
@@ -132,7 +144,9 @@ class Settings:
             auth_session_ttl_hours=max(1, int(os.getenv("AUTH_SESSION_TTL_HOURS", "24"))),
             auth_cookie_name=os.getenv("AUTH_COOKIE_NAME", "traders_cockpit_session").strip(),
             auth_cookie_samesite=auth_cookie_samesite,
-            auth_cookie_secure=_as_bool(os.getenv("AUTH_COOKIE_SECURE", auth_cookie_secure_default)),
+            auth_cookie_secure=_as_bool(
+                os.getenv("AUTH_COOKIE_SECURE", auth_cookie_secure_default)
+            ),
             auth_db_path=auth_db_path,
             auth_seed_users=_as_bool(os.getenv("AUTH_SEED_USERS", "true"), True),
             auth_admin_username=os.getenv("AUTH_ADMIN_USERNAME", "admin").strip(),
@@ -205,8 +219,16 @@ class Settings:
 
     @property
     def local_personal_paper_ready(self) -> bool:
-        return self.broker_mode == "alpaca_paper" and not self.allow_live_trading and self.has_alpaca_credentials
+        return (
+            self.broker_mode == "alpaca_paper"
+            and not self.allow_live_trading
+            and self.has_alpaca_credentials
+        )
 
     @property
     def live_trading_enabled(self) -> bool:
-        return self.broker_mode == "alpaca_live" and self.allow_live_trading and bool(self.live_confirmation_token)
+        return (
+            self.broker_mode == "alpaca_live"
+            and self.allow_live_trading
+            and bool(self.live_confirmation_token)
+        )
