@@ -1,9 +1,10 @@
 import { fp, stopPlanRows } from "@/lib/cockpit-ui";
-import type { OrderView, SetupResponse, StopMode, Tranche } from "@/lib/types";
+import type { EntrySide, OrderView, SetupResponse, StopMode, Tranche } from "@/lib/types";
 
 type Props = {
   setup: SetupResponse | null;
   phase: string | null;
+  entrySide: EntrySide;
   stopMode: number;
   stopModes: StopMode[];
   tranches: Tranche[];
@@ -24,6 +25,7 @@ export function StopProtectionPanel(props: Props) {
   const {
     setup,
     phase,
+    entrySide,
     stopMode,
     stopModes,
     tranches,
@@ -39,7 +41,7 @@ export function StopProtectionPanel(props: Props) {
     onMoveToBe,
     onFlatten
   } = props;
-  const rows = stopPlanRows(setup, tranches, stopMode, stopModes, orders);
+  const rows = stopPlanRows(setup, tranches, stopMode, stopModes, orders, entrySide);
   const hasSetup = Boolean(setup);
   const hasTrade = tranches.length > 0;
   const waitingForFill = phase === "entry_pending";

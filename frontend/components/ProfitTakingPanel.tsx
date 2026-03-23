@@ -1,11 +1,12 @@
 "use client";
 
 import { fp, splitShares, targetPrice, trailingStop } from "@/lib/cockpit-ui";
-import type { PositionView, SetupResponse, TrancheMode } from "@/lib/types";
+import type { EntrySide, PositionView, SetupResponse, TrancheMode } from "@/lib/types";
 
 type Props = {
   setup: SetupResponse | null;
   activePosition: PositionView | null;
+  entrySide: EntrySide;
   trancheCount: number;
   trancheModes: TrancheMode[];
   executeFlashing?: boolean;
@@ -20,6 +21,7 @@ export function ProfitTakingPanel(props: Props) {
   const {
     setup,
     activePosition,
+    entrySide,
     trancheCount,
     trancheModes,
     executeFlashing = false,
@@ -55,7 +57,9 @@ export function ProfitTakingPanel(props: Props) {
         <div className="section-label stop-plan-title">Exit Plan</div>
         <div className="exit-plan-content">
           {!plannedSetup ? null : trancheModes.slice(0, trancheCount).map((mode, index) => {
-            const price = mode.mode === "runner" ? trailingStop(activePosition?.livePrice ?? plannedSetup.last, mode) : targetPrice(plannedSetup, mode);
+            const price = mode.mode === "runner"
+              ? trailingStop(activePosition?.livePrice ?? plannedSetup.last, mode, entrySide)
+              : targetPrice(plannedSetup, mode, entrySide);
             const qty = plannedShares[index] ?? 0;
             return (
               <div className="exit-plan-line" key={`exit-${index}`}>
