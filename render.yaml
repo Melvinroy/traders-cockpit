@@ -5,7 +5,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     plan: starter
     autoDeployTrigger: checksPass
-    healthCheckPath: /health
+    healthCheckPath: /health/ready
     disk:
       name: auth
       mountPath: /var/lib/traders-cockpit/auth

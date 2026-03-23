@@ -41,33 +41,101 @@ def ensure_auth_db_path(path_value: str) -> Path:
     return path
 
 
-def check_database(database_url: str) -> None:
+def check_auth_path(path_value: str) -> str | None:
+    try:
+        ensure_auth_db_path(path_value)
+    except OSError as exc:
+        return f"auth path unavailable: {exc}"
+    return None
+
+
+def check_database(database_url: str) -> str | None:
     engine = create_engine(database_url, future=True, pool_pre_ping=True)
     try:
         with engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1")
+    except Exception as exc:  # pragma: no cover - exercised through readiness tests
+        return f"database unavailable: {exc}"
     finally:
         engine.dispose()
+    return None
 
 
-def check_redis(redis_url: str) -> None:
+def check_redis(redis_url: str) -> str | None:
     client = Redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
     try:
         client.ping()
+    except Exception as exc:  # pragma: no cover - exercised through readiness tests
+        return f"redis unavailable: {exc}"
     finally:
         client.close()
+    return None
+
+
+def build_liveness_report(settings: Settings) -> dict[str, object]:
+    return {
+        "status": "ok",
+        "kind": "live",
+        "app_env": settings.app_env,
+        "broker_mode": settings.broker_mode,
+    }
+
+
+def build_dependency_report(settings: Settings) -> dict[str, dict[str, str]]:
+    auth_issue = check_auth_path(settings.auth_db_path)
+    dependencies: dict[str, dict[str, str]] = {
+        "auth": {"status": "ok" if auth_issue is None else "error"},
+    }
+    if auth_issue is not None:
+        dependencies["auth"]["detail"] = auth_issue
+
+    if settings.app_env in HOSTED_ENVS:
+        db_issue = check_database(settings.database_url)
+        redis_issue = check_redis(settings.redis_url)
+        dependencies["database"] = {"status": "ok" if db_issue is None else "error"}
+        dependencies["redis"] = {"status": "ok" if redis_issue is None else "error"}
+        if db_issue is not None:
+            dependencies["database"]["detail"] = db_issue
+        if redis_issue is not None:
+            dependencies["redis"]["detail"] = redis_issue
+
+    return dependencies
+
+
+def build_readiness_report(settings: Settings) -> dict[str, object]:
+    runtime_issues = validate_runtime_contract(settings)
+    dependencies = build_dependency_report(settings)
+    dependency_failures = [
+        name for name, payload in dependencies.items() if payload.get("status") != "ok"
+    ]
+    status = "ok" if not runtime_issues and not dependency_failures else "error"
+    report: dict[str, object] = {
+        "status": status,
+        "kind": "ready",
+        "app_env": settings.app_env,
+        "broker_mode": settings.broker_mode,
+        "runtime_contract": {
+            "status": "ok" if not runtime_issues else "error",
+            "issues": runtime_issues,
+        },
+        "dependencies": dependencies,
+    }
+    return report
 
 
 def run_startup_preflight(settings: Settings) -> None:
-    issues = validate_runtime_contract(settings)
-    if issues:
-        joined = "\n".join(f"- {issue}" for issue in issues)
-        raise RuntimeError(f"Startup preflight failed:\n{joined}")
+    readiness = build_readiness_report(settings)
+    if readiness["status"] == "ok":
+        return
 
-    ensure_auth_db_path(settings.auth_db_path)
-    if settings.app_env in HOSTED_ENVS:
-        check_database(settings.database_url)
-        check_redis(settings.redis_url)
+    runtime_issues = readiness["runtime_contract"]["issues"]
+    dependency_issues = [
+        payload["detail"]
+        for payload in readiness["dependencies"].values()
+        if payload.get("status") != "ok" and "detail" in payload
+    ]
+    joined = "\n".join(f"- {issue}" for issue in [*runtime_issues, *dependency_issues])
+    raise RuntimeError(f"Startup preflight failed:\n{joined}")
 
 
 def main() -> None:

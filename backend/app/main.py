@@ -5,12 +5,18 @@ import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.deps_auth import require_websocket_session
 from app.api import routes_account, routes_market, routes_positions, routes_trade
 from app.api.routes_auth import router as auth_router
 from app.core.config import Settings
+from app.core.startup_preflight import (
+    build_dependency_report,
+    build_liveness_report,
+    build_readiness_report,
+)
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.services.auth import get_auth_store
@@ -58,8 +64,35 @@ app.include_router(routes_trade.build_router(service))
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "broker_mode": settings.broker_mode}
+def health() -> JSONResponse:
+    return JSONResponse(build_liveness_report(settings))
+
+
+@app.get("/health/live")
+def health_live() -> JSONResponse:
+    return JSONResponse(build_liveness_report(settings))
+
+
+@app.get("/health/ready")
+def health_ready() -> JSONResponse:
+    payload = build_readiness_report(settings)
+    status_code = 200 if payload["status"] == "ok" else 503
+    return JSONResponse(payload, status_code=status_code)
+
+
+@app.get("/health/deps")
+def health_dependencies() -> JSONResponse:
+    payload = {
+        "status": "ok",
+        "kind": "deps",
+        "app_env": settings.app_env,
+        "broker_mode": settings.broker_mode,
+        "dependencies": build_dependency_report(settings),
+    }
+    if any(item.get("status") != "ok" for item in payload["dependencies"].values()):
+        payload["status"] = "error"
+    status_code = 200 if payload["status"] == "ok" else 503
+    return JSONResponse(payload, status_code=status_code)
 
 
 @app.websocket("/ws/cockpit")
