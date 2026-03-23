@@ -1,17 +1,16 @@
 "use client";
 
-import { OrdersBlotter } from "@/components/OrdersBlotter";
-import { activeShares, f2, fp, soldShares, splitShares, targetPrice, trailingStop } from "@/lib/cockpit-ui";
-import type { OrderView, PositionView, SetupResponse, Tranche, TrancheMode } from "@/lib/types";
+import { fp, splitShares, targetPrice, trailingStop } from "@/lib/cockpit-ui";
+import type { PositionView, SetupResponse, TrancheMode } from "@/lib/types";
 
 type Props = {
   setup: SetupResponse | null;
   activePosition: PositionView | null;
   trancheCount: number;
   trancheModes: TrancheMode[];
-  tranches: Tranche[];
-  orders: OrderView[];
   executeFlashing?: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   onTrancheCountChange: (value: number) => void;
   onTrancheModeChange: (index: number, value: TrancheMode) => void;
   onExecute: () => void;
@@ -23,36 +22,35 @@ export function ProfitTakingPanel(props: Props) {
     activePosition,
     trancheCount,
     trancheModes,
-    tranches,
-    orders,
     executeFlashing = false,
+    collapsed = false,
+    onToggleCollapse,
     onTrancheCountChange,
     onTrancheModeChange,
     onExecute
   } = props;
-  const plannedShares = setup ? splitShares(setup.shares, trancheCount) : [];
-  const activeQty = activePosition ? activeShares(activePosition) : 0;
-  const soldQty = activePosition ? soldShares(activePosition) : 0;
+  const plannedShares = setup
+    ? splitShares(setup.shares, trancheCount, trancheModes.slice(0, trancheCount).map((mode) => mode.allocationPct ?? null))
+    : [];
   const plannedSetup = setup;
   const canExecuteProfit = activePosition ? ["protected", "P1_done", "P2_done", "runner_only"].includes(activePosition.phase) : false;
-  const visibleTranches = activePosition
-    ? tranches.filter((tranche) => tranche.status === "sold" || tranche.status === "canceled" || (tranche.id === "T3" && activePosition.phase === "runner_only"))
-    : [];
-  const showManageState = Boolean(activePosition);
 
   return (
-    <div className="panel manage-panel">
+    <div className={`panel manage-panel ${collapsed ? "panel-collapsed" : ""}`}>
       <div className="panel-header profit-header">
-        <div className="panel-title">Profit Taking</div>
+        <div className="panel-title-row">
+          <button type="button" className="panel-collapse-btn" onClick={onToggleCollapse}>{collapsed ? "+" : "-"}</button>
+          <div className="panel-title">Profit Taking</div>
+        </div>
         <div className="profit-controls">
           <span className="protect-caption">TRANCHES</span>
           <button type="button" className={`tranche-count-btn ${trancheCount === 1 ? "active" : ""}`} onClick={() => onTrancheCountChange(1)}>P1</button>
           <button type="button" className={`tranche-count-btn ${trancheCount === 2 ? "active" : ""}`} onClick={() => onTrancheCountChange(2)}>P1{"\u00B7"}P2</button>
           <button type="button" className={`tranche-count-btn ${trancheCount === 3 ? "active" : ""}`} onClick={() => onTrancheCountChange(3)}>P1{"\u00B7"}P2{"\u00B7"}P3</button>
           <button type="button" className={`stop-ok-btn ${canExecuteProfit ? "stop-ok-ready" : ""} ${executeFlashing ? "flash" : ""}`} disabled={!canExecuteProfit} onClick={onExecute}>EXECUTE</button>
-          <div className="position-summary-header">{activePosition ? `${activeQty}sh active / ${soldQty}sh sold` : "No position"}</div>
         </div>
       </div>
+      {!collapsed ? <>
       <div className="exit-plan-shell">
         <div className="section-label stop-plan-title">Exit Plan</div>
         <div className="exit-plan-content">
@@ -74,7 +72,16 @@ export function ProfitTakingPanel(props: Props) {
                 >
                   {mode.mode === "runner" ? "RUNNER" : "LIMIT"}
                 </button>
-                <span className="plan-pct">{qty ? `${Math.round((qty / plannedSetup.shares) * 100)}%` : "-"}</span>
+                <div className="pct-input-wrap">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    className="pct-input"
+                    value={Number((mode.allocationPct ?? 0).toFixed(2))}
+                    onChange={(event) => onTrancheModeChange(index, { ...mode, allocationPct: Number(event.target.value) })}
+                  />
+                  <span className="pct-suffix">%</span>
+                </div>
                 <span className="plan-price">{price !== null ? fp(price) : "-"}</span>
                 <span className="plan-qty">{qty} sh</span>
                 {mode.mode === "runner" ? (
@@ -122,50 +129,7 @@ export function ProfitTakingPanel(props: Props) {
           })}
         </div>
       </div>
-      <div className="manage-scroll">
-        <div className="section-label manage-section-label" style={{ display: showManageState ? "block" : "none" }}>Exits</div>
-        {activePosition ? (
-          <>
-            <div className="tranche-grid">
-              {visibleTranches.map((tranche) => {
-                const pnl = tranche.status === "sold" && tranche.target ? (tranche.target - (setup?.entry ?? 0)) * tranche.qty : null;
-                const trancheSuffix = tranche.label.includes("\u00B7")
-                  ? tranche.label.split("\u00B7").slice(-1)[0]?.trim() ?? tranche.label
-                  : tranche.label;
-                return (
-                  <div key={tranche.id} className={`tranche-card ${tranche.status}`}>
-                    <div className="tranche-label">{tranche.id} {"\u00B7"} {trancheSuffix}</div>
-                    <div className="tranche-qty">{tranche.qty} <span className="tranche-unit">sh</span></div>
-                    <div className="tranche-stop">{"\u2193"} STOP {fp(tranche.stop)}</div>
-                    <div className="tranche-target">{tranche.target ? `${"\u2191"} TGT ${fp(tranche.target)}` : `${"\u2191"} ${tranche.mode.toUpperCase()}`}</div>
-                    {pnl !== null ? (
-                      <div className={`tranche-pnl ${pnl >= 0 ? "green" : "red"}`}>{pnl >= 0 ? "+" : ""}{f2(pnl)}</div>
-                    ) : null}
-                    <div className={`tranche-status status-${tranche.status}`}>
-                      <span className="status-dot" />
-                      {tranche.status.toUpperCase()}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="pos-summary">
-              <div className="pos-item"><div className="pos-item-label">Total Shares</div><div className="pos-item-val">{setup?.shares ?? 0}</div></div>
-              <div className="pos-item"><div className="pos-item-label">Active</div><div className="pos-item-val green">{activeQty} sh</div></div>
-              <div className="pos-item"><div className="pos-item-label">Sold</div><div className="pos-item-val">{soldQty} sh</div></div>
-              <div className="pos-item"><div className="pos-item-label">Entry</div><div className="pos-item-val">{fp(setup?.entry)}</div></div>
-              <div className="pos-item"><div className="pos-item-label">Notional</div><div className="pos-item-val">{f2((setup?.entry ?? 0) * activeQty)}</div></div>
-            </div>
-            <div className="section-label manage-section-label">Orders</div>
-            <OrdersBlotter orders={orders} />
-          </>
-        ) : (
-          <div id="manageEmpty" className="empty-state">
-            <div className="empty-icon">{"\u25C8"}</div>
-            Set stop protection, then take profits manually
-          </div>
-        )}
-      </div>
+      </> : null}
     </div>
   );
 }

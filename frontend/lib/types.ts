@@ -1,7 +1,34 @@
 export type StopMode = { mode: "stop" | "be"; pct: number | null };
 
+export type EntryOrderType = "market" | "limit" | "stop" | "stop_limit";
+export type TimeInForce = "day" | "gtc" | "ioc" | "fok" | "opg" | "cls";
+export type OrderClass = "simple" | "bracket" | "oco" | "oto";
+export type OtoExitSide = "stop_loss" | "take_profit";
+
+export type TakeProfitDraft = {
+  limitPrice: number | null;
+};
+
+export type StopLossDraft = {
+  stopPrice: number | null;
+  limitPrice: number | null;
+};
+
+export type EntryOrderDraft = {
+  orderType: EntryOrderType;
+  timeInForce: TimeInForce;
+  orderClass: OrderClass;
+  extendedHours: boolean;
+  limitPrice: number | null;
+  stopPrice: number | null;
+  otoExitSide: OtoExitSide;
+  takeProfit: TakeProfitDraft | null;
+  stopLoss: StopLossDraft | null;
+};
+
 export type TrancheMode = {
   mode: "limit" | "runner";
+  allocationPct?: number | null;
   trail: number;
   trailUnit: "$" | "%";
   target: "1R" | "2R" | "3R" | "Manual";
@@ -14,6 +41,9 @@ export type Tranche = {
   stop: number;
   target?: number | null;
   status: "active" | "sold" | "canceled";
+  exitPrice?: number | null;
+  exitFilledAt?: string | null;
+  exitOrderType?: string | null;
   mode: "limit" | "runner";
   trail: number;
   trailUnit: "$" | "%";
@@ -23,16 +53,22 @@ export type Tranche = {
 
 export type OrderView = {
   id: string;
+  symbol: string;
+  side?: string | null;
   type: string;
   qty: number;
   origQty: number;
+  filledQty: number;
+  remainingQty: number;
   price: number;
   status: string;
   tranche: string;
   coveredTranches: string[];
   parentId?: string | null;
   brokerOrderId?: string | null;
+  cancelable: boolean;
   createdAt?: string | null;
+  updatedAt?: string | null;
   filledAt?: string | null;
   fillPrice?: number | null;
 };
@@ -51,7 +87,12 @@ export type SetupResponse = {
   sessionState: "regular_open" | "overnight" | "pre_market" | "after_hours" | "closed";
   quoteState: "live_quote" | "cached_quote" | "quote_unavailable";
   entryBasis: string;
-  stopReferenceDefault: string;
+  stopReferenceDefault: "lod" | "atr" | "manual";
+  lodIsValid: boolean;
+  atrIsValid: boolean;
+  lodStop: number;
+  atrStop: number;
+  manualStopWarning?: string | null;
   bid: number;
   ask: number;
   last: number;
@@ -75,8 +116,26 @@ export type SetupResponse = {
   perShareRisk: number;
   riskPct: number;
   accountEquity: number;
+  accountBuyingPower: number;
+  accountCash?: number | null;
+  equitySource: string;
+  sizingWarning?: string | null;
+  buyingPowerNote?: string | null;
   atrExtension: number;
   extFrom10Ma: number;
+};
+
+export type TradePreviewResponse = {
+  symbol: string;
+  entry: number;
+  finalStop: number;
+  perShareRisk: number;
+  shares: number;
+  dollarRisk: number;
+  sizingWarning?: string | null;
+  orderType?: EntryOrderType;
+  timeInForce?: TimeInForce;
+  orderClass?: OrderClass;
 };
 
 export type PositionView = {
@@ -98,9 +157,11 @@ export type OffHoursMode = "queue_for_open" | "extended_hours_limit";
 export type AccountView = {
   equity: number;
   buying_power: number;
+  cash?: number | null;
   risk_pct: number;
   mode: string;
   effective_mode: string;
+  equity_source: string;
   daily_realized_pnl: number;
   allow_live_trading: boolean;
   max_position_notional_pct: number;

@@ -1,4 +1,16 @@
-import type { AccountView, AuthUser, LogEntry, OffHoursMode, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
+import type {
+  AccountView,
+  AuthUser,
+  EntryOrderDraft,
+  LogEntry,
+  OffHoursMode,
+  OrderView,
+  PositionView,
+  SetupResponse,
+  StopMode,
+  TradePreviewResponse,
+  TrancheMode,
+} from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -87,14 +99,16 @@ export const api = {
   getAccount: () => request<AccountView>("/api/account"),
   updateAccount: (payload: { equity: number; risk_pct: number; mode: string }) =>
     request<AccountView>("/api/account/settings", { method: "PUT", body: JSON.stringify(payload) }),
-  getSetup: (symbol: string) => request<SetupResponse>(`/api/setup/${symbol}`),
+  getSetup: (symbol: string, signal?: AbortSignal) => request<SetupResponse>(`/api/setup/${symbol}`, { signal }),
   getPositions: () => request<PositionView[]>("/api/positions"),
-  getOrders: (symbol: string) => request(`/api/orders/${symbol}`),
+  getOrders: (symbol: string) => request<OrderView[]>(`/api/orders/${symbol}`),
+  getRecentOrders: () => request<OrderView[]>("/api/orders"),
+  cancelOrder: (brokerOrderId: string) => request<OrderView>(`/api/orders/${brokerOrderId}`, { method: "DELETE" }),
   getLogs: () => request<LogEntry[]>("/api/activity-log"),
   clearLogs: () => request<{ cleared: number }>("/api/activity-log", { method: "DELETE" }),
-  previewTrade: (payload: { symbol: string; entry: number; stopRef: string; stopPrice: number; riskPct: number }) =>
-    request("/api/trade/preview", { method: "POST", body: JSON.stringify(payload) }),
-  enterTrade: (payload: { symbol: string; entry: number; stopRef: string; stopPrice: number; trancheCount: number; trancheModes: TrancheMode[]; offHoursMode?: OffHoursMode | null }) =>
+  previewTrade: (payload: { symbol: string; entry: number; stopRef: string; stopPrice: number; riskPct: number; order: EntryOrderDraft }) =>
+    request<TradePreviewResponse>("/api/trade/preview", { method: "POST", body: JSON.stringify(payload) }),
+  enterTrade: (payload: { symbol: string; entry: number; stopRef: string; stopPrice: number; trancheCount: number; trancheModes: TrancheMode[]; offHoursMode?: OffHoursMode | null; order: EntryOrderDraft }) =>
     request<PositionView>("/api/trade/enter", { method: "POST", body: JSON.stringify(payload) }),
   applyStops: (payload: { symbol: string; stopMode: number; stopModes: StopMode[] }) =>
     request<PositionView>("/api/trade/stops", { method: "POST", body: JSON.stringify(payload) }),
