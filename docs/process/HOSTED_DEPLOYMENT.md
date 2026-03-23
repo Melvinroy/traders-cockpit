@@ -2,6 +2,8 @@
 
 Hosted deployment is a trailing deliverable. Validate the local paper-trading path first, then redeploy hosted staging from a known-good local state.
 
+Use `.env.production.example` as the public hosted config contract. Copy it to a private env file, fill in real values, and keep `.env.example` reserved for deterministic local development.
+
 ## Recommended Topology
 
 - Frontend: Vercel
@@ -38,6 +40,9 @@ Required backend envs:
 - `DATABASE_URL`
 - `REDIS_URL`
 - `CORS_ORIGINS`
+- `AUTH_COOKIE_SECURE=true`
+- `AUTH_COOKIE_SAMESITE=none` for cross-origin frontend/backends
+- `AUTH_DB_PATH` on a persistent disk path
 - `AUTH_ADMIN_USERNAME`
 - `AUTH_ADMIN_PASSWORD`
 - `AUTH_TRADER_USERNAME`
@@ -59,19 +64,36 @@ The repo includes [render.yaml](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/
 - managed Postgres
 - managed Redis
 
+Treat the current Render blueprint as a staging starting point. Before using it as a production contract, add an explicit persistent path for `AUTH_DB_PATH` and keep the hosted env file aligned with `.env.production.example`.
+
 After backend deployment, copy the public backend origin into:
 
 - Vercel `NEXT_PUBLIC_API_BASE_URL`
 - Vercel `NEXT_PUBLIC_WS_URL`
 - backend `CORS_ORIGINS`
 
+Keep these origin groups explicit:
+
+- dev: `http://127.0.0.1:3000`, `http://127.0.0.1:3010`
+- hosted preview: your preview frontend origin
+- hosted production: your production frontend origin
+
 ## Pre-Deploy Validation
 
 Validate a staged env file locally with:
 
 ```powershell
-.\scripts\dev\check-hosted-env.ps1 -EnvFile ".env"
+Copy-Item .env.production.example .env.production.local
+# edit .env.production.local
+.\scripts\dev\check-hosted-env.ps1 -EnvFile ".env.production.local"
 ```
+
+The hosted env check now rejects:
+
+- localhost / `127.0.0.1` public URLs
+- SQLite-backed hosted config
+- insecure auth cookie settings
+- missing live confirmation token when live trading is enabled
 
 ## Promotion Path
 

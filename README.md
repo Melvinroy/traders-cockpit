@@ -133,9 +133,12 @@ docker compose --env-file .env up --build -d
 | PostgreSQL | localhost:55432 |
 | Redis | localhost:56379 |
 
-Current integration-branch defaults:
+Current repo defaults:
 
-- `.env.example`, `.env.personal-paper.example`, and `docker-compose.yml` use `change-me-*` placeholder passwords
+- `.env.example` is the deterministic local-dev contract
+- `.env.production.example` is the hosted staging/production contract
+- `.env.personal-paper.example` is for private local Alpaca paper trading
+- `.env.example`, `.env.personal-paper.example`, `.env.production.example`, and `docker-compose.yml` use `change-me-*` placeholder passwords
 - override all placeholder credentials in any real environment
 
 Rotate all seeded credentials before any shared or hosted deployment.
@@ -276,7 +279,7 @@ ORD-0001  MKT    AAPL  53sh              FILLED   <- root entry
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set only what you need. Most values have safe local defaults.
+Copy `.env.example` to `.env` for deterministic local development. Use `.env.production.example` as the hosted staging/production starting point. Most values have safe local defaults in development and intentionally stricter defaults in the production template.
 
 ### Core and connectivity
 
@@ -288,7 +291,7 @@ Copy `.env.example` to `.env` and set only what you need. Most values have safe 
 | `OPS_REQUIRE_AUTH` | `false` | Gates ops endpoints behind auth checks when enabled. |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://127.0.0.1:8010` | Frontend REST origin for local script-driven dev. |
 | `NEXT_PUBLIC_WS_URL` | `ws://127.0.0.1:8010/ws/cockpit` | Frontend websocket origin for local script-driven dev. |
-| `CORS_ORIGINS` | `http://127.0.0.1:3010,http://localhost:3010` | Allowed browser origins. |
+| `CORS_ORIGINS` | `http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3010,http://localhost:3010` | Allowed browser origins. |
 | `DATABASE_URL` | `postgresql://<db-user>:<db-password>@<db-host>:5432/<db-name>` | PostgreSQL connection string. |
 | `REDIS_URL` | `redis://<redis-host>:6379/0` | Redis connection string. |
 | `REDIS_CHANNEL_PREFIX` | `traders-cockpit` | Prefix for websocket pub/sub fanout. |
@@ -353,7 +356,7 @@ Copy `.env.example` to `.env` and set only what you need. Most values have safe 
 Important:
 
 - `.env.example` defaults to `BROKER_MODE=paper` for deterministic local work.
-- `docker-compose.yml` defaults the backend container to `BROKER_MODE=alpaca_paper`.
+- `docker-compose.yml` defaults the backend container to `BROKER_MODE=paper`.
 - `alpaca_live` remains inactive unless `BROKER_MODE=alpaca_live`, `ALLOW_LIVE_TRADING=true`, and `LIVE_CONFIRMATION_TOKEN` are all set.
 
 ## Testing
@@ -402,7 +405,20 @@ Recommended hosted topology:
 | Database | Managed PostgreSQL |
 | Cache | Managed Redis |
 
+Canonical hosted origins:
+
+- Frontend: `https://app.example.com`
+- Backend API: `https://api.example.com`
+- Backend WebSocket: `wss://api.example.com/ws/cockpit`
+
 The repo includes [render.yaml](render.yaml) for backend, Postgres, and Redis provisioning on Render.
+
+For hosted deployments, start from `.env.production.example` and validate the env file before deploy:
+
+```powershell
+Copy-Item .env.production.example .env.production.local
+.\scripts\dev\check-hosted-env.ps1 -EnvFile ".env.production.local"
+```
 
 For hosted cross-origin deployments:
 
@@ -410,6 +426,7 @@ For hosted cross-origin deployments:
 AUTH_COOKIE_SAMESITE=none
 AUTH_COOKIE_SECURE=true
 CORS_ORIGINS=https://your-frontend.vercel.app
+AUTH_DB_PATH=/var/lib/traders-cockpit/auth/auth.db
 ```
 
 Validate hosted envs before deploy:

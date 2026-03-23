@@ -29,6 +29,7 @@ Thumbs.db
 !.env.example
 !**/.env.example
 !.env.personal-paper.example
+!.env.production.example
 *.log
 
 # Runtime data
