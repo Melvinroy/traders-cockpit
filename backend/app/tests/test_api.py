@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -1548,6 +1549,56 @@ def test_recent_orders_merge_broker_state_and_cancel() -> None:
         service.broker.list_recent_orders = original_list_recent_orders
         service.broker.get_order = original_get_order
         service.broker.cancel_order = original_cancel_order
+
+
+def test_recent_orders_handles_mixed_naive_and_aware_timestamps() -> None:
+    with SessionLocal() as db:
+        db.add(
+            OrderEntity(
+                order_id="ORD-9301",
+                broker_order_id="broker-mixed-1",
+                symbol="AAPL",
+                type="LMT",
+                qty=10,
+                orig_qty=10,
+                price=101.25,
+                status="PENDING",
+                tranche_label="AAPL",
+                covered_tranches=[],
+                parent_id=None,
+                created_at=datetime(2026, 3, 22, 10, 0, 0),
+            )
+        )
+        db.commit()
+
+    original_list_recent_orders = service.broker.list_recent_orders
+
+    def fake_list_recent_orders(limit: int = 50):
+        return [
+            {
+                "id": "broker-mixed-1",
+                "client_order_id": "client-mixed-1",
+                "symbol": "AAPL",
+                "side": "buy",
+                "type": "limit",
+                "qty": "10",
+                "filled_qty": "0",
+                "limit_price": "101.25",
+                "status": "accepted",
+                "created_at": "2026-03-22T10:00:00Z",
+                "updated_at": "2026-03-22T10:00:05Z",
+            }
+        ][:limit]
+
+    service.broker.list_recent_orders = fake_list_recent_orders
+    try:
+        response = client.get("/api/orders")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload[0]["brokerOrderId"] == "broker-mixed-1"
+        assert payload[0]["updatedAt"].startswith("2026-03-22T10:00:05")
+    finally:
+        service.broker.list_recent_orders = original_list_recent_orders
 
 
 def test_cancel_recent_order_logs_request_scoped_event(
