@@ -31,6 +31,7 @@ from app.schemas.cockpit import (
     Tranche,
     TrancheMode,
 )
+from app.services.entry_order_rules import evaluate_entry_order_rules
 from app.ws.manager import WebSocketManager
 
 
@@ -1214,53 +1215,9 @@ class CockpitService:
         return round(entry, 2)
 
     def _validate_entry_order(self, order: EntryOrderDraft, session_state: str) -> None:
-        valid_tif_by_type = {
-            "market": {"day", "gtc", "ioc", "fok", "opg", "cls"},
-            "limit": {"day", "gtc", "ioc", "fok", "opg", "cls"},
-            "stop": {"day", "gtc"},
-            "stop_limit": {"day", "gtc"},
-        }
-        if order.timeInForce not in valid_tif_by_type[order.orderType]:
-            raise ValueError(
-                f"{order.orderType.upper()} orders do not support {order.timeInForce.upper()} time-in-force."
-            )
-        if order.orderType in {"limit", "stop_limit"} and (
-            order.limitPrice is None or order.limitPrice <= 0
-        ):
-            raise ValueError("Limit price is required for limit and stop-limit entries.")
-        if order.orderType in {"stop", "stop_limit"} and (
-            order.stopPrice is None or order.stopPrice <= 0
-        ):
-            raise ValueError("Stop trigger price is required for stop and stop-limit entries.")
-        if order.extendedHours:
-            if order.orderType != "limit" or order.timeInForce not in {"day", "gtc"}:
-                raise ValueError("Extended-hours entries must be LIMIT with DAY or GTC.")
-            if order.orderClass != "simple":
-                raise ValueError("Extended-hours is only available for simple limit entries.")
-        if order.orderClass == "oco":
-            raise ValueError(
-                "OCO is an exit-only Alpaca order class and cannot be used for a new entry."
-            )
-        if order.orderClass == "bracket":
-            if not order.takeProfit or order.takeProfit.limitPrice is None:
-                raise ValueError("Bracket orders require a take-profit limit price.")
-            if not order.stopLoss or order.stopLoss.stopPrice is None:
-                raise ValueError("Bracket orders require a stop-loss stop price.")
-        if order.orderClass == "oto":
-            if order.otoExitSide == "take_profit":
-                if not order.takeProfit or order.takeProfit.limitPrice is None:
-                    raise ValueError("OTO take-profit orders require a take-profit limit price.")
-            else:
-                if not order.stopLoss or order.stopLoss.stopPrice is None:
-                    raise ValueError("OTO stop-loss orders require a stop-loss stop price.")
-        if order.orderClass in {"bracket", "oto"} and order.timeInForce not in {"day", "gtc"}:
-            raise ValueError("Attached exit orders require DAY or GTC time-in-force.")
-        if (
-            session_state != "regular_open"
-            and order.orderType == "market"
-            and order.timeInForce in {"opg", "cls"}
-        ):
-            raise ValueError("Auction-only orders are unavailable outside the regular session.")
+        rules = evaluate_entry_order_rules(order, session_state)
+        if rules.errors:
+            raise ValueError(" ".join(rules.errors))
 
     def _build_broker_entry_order(
         self,

@@ -637,6 +637,109 @@ def test_short_trade_uses_buy_to_cover_for_stops_and_profit_orders() -> None:
     assert all(order["side"] == "BUY" for order in filled_limits)
 
 
+def test_preview_rejects_stop_ioc_combo() -> None:
+    setup = client.get("/api/setup/AAPL").json()
+
+    response = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 1,
+            "order": simple_entry_order(
+                orderType="stop",
+                timeInForce="ioc",
+                stopPrice=round(setup["entry"] + 1, 2),
+                limitPrice=None,
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "STOP orders do not support IOC time-in-force." in response.text
+
+
+def test_preview_rejects_bracket_with_invalid_tif() -> None:
+    setup = client.get("/api/setup/AAPL").json()
+
+    response = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 1,
+            "order": simple_entry_order(
+                orderType="market",
+                timeInForce="fok",
+                orderClass="bracket",
+                limitPrice=None,
+                takeProfit={"limitPrice": round(setup["entry"] + 1, 2)},
+                stopLoss={"stopPrice": round(setup["entry"] - 1, 2), "limitPrice": None},
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Attached exit orders require DAY or GTC time-in-force." in response.text
+
+
+def test_preview_rejects_extended_hours_non_simple_limit() -> None:
+    setup = client.get("/api/setup/AAPL").json()
+
+    response = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 1,
+            "order": simple_entry_order(
+                orderType="limit",
+                timeInForce="day",
+                orderClass="bracket",
+                extendedHours=True,
+                limitPrice=setup["entry"],
+                takeProfit={"limitPrice": round(setup["entry"] + 1, 2)},
+                stopLoss={"stopPrice": round(setup["entry"] - 1, 2), "limitPrice": None},
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Extended-hours is only available for simple limit entries." in response.text
+
+
+def test_preview_rejects_oco_entry_order_class() -> None:
+    setup = client.get("/api/setup/AAPL").json()
+
+    response = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 1,
+            "order": simple_entry_order(
+                orderType="limit",
+                timeInForce="day",
+                orderClass="oco",
+                limitPrice=setup["entry"],
+                takeProfit={"limitPrice": round(setup["entry"] + 1, 2)},
+                stopLoss={"stopPrice": round(setup["entry"] - 1, 2), "limitPrice": None},
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "exit-only Alpaca order class" in response.text
+
+
 def test_three_stop_mode_defaults_to_33_33_34_when_pct_is_blank() -> None:
     client.put(
         "/api/account/settings",

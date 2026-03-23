@@ -1,4 +1,5 @@
 import { fp } from "@/lib/cockpit-ui";
+import { firstEntryOrderIssue, type EntryOrderIssue } from "@/lib/entry-order-rules";
 import type { EntryOrderDraft, EntryOrderType, EntrySide, OtoExitSide, OrderClass, SetupResponse, TimeInForce } from "@/lib/types";
 
 const ORDER_TYPE_OPTIONS: Array<{ value: EntryOrderType; label: string }> = [
@@ -24,11 +25,6 @@ const TIF_OPTIONS: Array<{ value: TimeInForce; label: string }> = [
   { value: "cls", label: "CLS" },
 ];
 
-function tifAllowed(orderType: EntryOrderType, tif: TimeInForce) {
-  if (orderType === "market" || orderType === "limit") return true;
-  return tif === "day" || tif === "gtc";
-}
-
 const SIDE_OPTIONS: Array<{ value: EntrySide; label: string }> = [
   { value: "buy", label: "BUY" },
   { value: "sell", label: "SELL" },
@@ -49,6 +45,7 @@ type Props = {
   manualStop: number | null;
   displayStopPrice: number | null;
   order: EntryOrderDraft;
+  orderIssues?: EntryOrderIssue[];
   attachedSummary: { takeProfit: number | null; stopLoss: number | null };
   actionsDisabled?: boolean;
   disabledReason?: string | null;
@@ -78,6 +75,7 @@ export function EntryPanel(props: Props) {
     manualStop,
     displayStopPrice,
     order,
+    orderIssues = [],
     attachedSummary,
     actionsDisabled = false,
     disabledReason = null,
@@ -115,6 +113,14 @@ export function EntryPanel(props: Props) {
   const entryFieldLabel = "Indicative";
   const limitFieldLabel = "Order Price";
   const triggerFieldLabel = "Trigger";
+  const typeIssue = firstEntryOrderIssue(orderIssues, "orderType");
+  const tifIssue = firstEntryOrderIssue(orderIssues, "timeInForce");
+  const classIssue = firstEntryOrderIssue(orderIssues, "orderClass");
+  const limitIssue = firstEntryOrderIssue(orderIssues, "limitPrice");
+  const triggerIssue = firstEntryOrderIssue(orderIssues, "stopPrice");
+  const inlineIssues = orderIssues.filter((issue, index, all) =>
+    all.findIndex((candidate) => candidate.message === issue.message && candidate.severity === issue.severity) === index
+  );
 
   return (
     <div className="panel entry-panel">
@@ -202,10 +208,12 @@ export function EntryPanel(props: Props) {
                   : "Load setup"}
               </div>
             </div>
-            <div className="entry-order-field">
+            <div className={`entry-order-field ${typeIssue ? "entry-order-field-invalid" : ""}`}>
               <span className="entry-order-label">Type</span>
               <select
                 className="entry-select"
+                aria-invalid={Boolean(typeIssue)}
+                title={typeIssue ?? undefined}
                 value={order.orderType}
                 onChange={(event) => onOrderChange({ ...order, orderType: event.target.value as EntryOrderType })}
               >
@@ -216,24 +224,28 @@ export function EntryPanel(props: Props) {
                 ))}
               </select>
             </div>
-            <div className="entry-order-field">
+            <div className={`entry-order-field ${tifIssue ? "entry-order-field-invalid" : ""}`}>
               <span className="entry-order-label">TIF</span>
               <select
                 className="entry-select"
+                aria-invalid={Boolean(tifIssue)}
+                title={tifIssue ?? undefined}
                 value={order.timeInForce}
                 onChange={(event) => onOrderChange({ ...order, timeInForce: event.target.value as TimeInForce })}
               >
                 {TIF_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value} disabled={!tifAllowed(order.orderType, option.value)}>
+                  <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
                 ))}
               </select>
             </div>
-            <div className="entry-order-field">
+            <div className={`entry-order-field ${classIssue ? "entry-order-field-invalid" : ""}`}>
               <span className="entry-order-label">Class</span>
               <select
                 className="entry-select"
+                aria-invalid={Boolean(classIssue)}
+                title={classIssue ?? undefined}
                 value={order.orderClass}
                 onChange={(event) => onOrderChange({ ...order, orderClass: event.target.value as OrderClass })}
               >
@@ -245,13 +257,15 @@ export function EntryPanel(props: Props) {
               </select>
             </div>
             {showLimitInput ? (
-              <div className="entry-order-field">
+              <div className={`entry-order-field ${limitIssue ? "entry-order-field-invalid" : ""}`}>
                 <span className="entry-order-label">{limitFieldLabel}</span>
                 <input
                   type="number"
                   inputMode="decimal"
                   value={order.limitPrice ?? ""}
                   className="entry-order-input"
+                  aria-invalid={Boolean(limitIssue)}
+                  title={limitIssue ?? undefined}
                   onChange={(event) =>
                     onOrderChange({
                       ...order,
@@ -262,13 +276,15 @@ export function EntryPanel(props: Props) {
               </div>
             ) : null}
             {showTriggerInput ? (
-              <div className="entry-order-field">
+              <div className={`entry-order-field ${triggerIssue ? "entry-order-field-invalid" : ""}`}>
                 <span className="entry-order-label">{triggerFieldLabel}</span>
                 <input
                   type="number"
                   inputMode="decimal"
                   value={order.stopPrice ?? ""}
                   className="entry-order-input"
+                  aria-invalid={Boolean(triggerIssue)}
+                  title={triggerIssue ?? undefined}
                   onChange={(event) =>
                     onOrderChange({
                       ...order,
@@ -333,6 +349,14 @@ export function EntryPanel(props: Props) {
               </div>
               {setup.manualStopWarning ? <div className="offhours-copy">{setup.manualStopWarning}</div> : null}
               {setup.sizingWarning ? <div className="offhours-copy">{setup.sizingWarning}</div> : null}
+              {inlineIssues.map((issue) => (
+                <div
+                  key={`${issue.field}-${issue.severity}-${issue.message}`}
+                  className={`offhours-copy ${issue.severity === "error" ? "entry-rule-error" : "entry-rule-note"}`}
+                >
+                  {issue.message}
+                </div>
+              ))}
               {disabledReason ? <div className="offhours-copy">{disabledReason}</div> : null}
               <div className="entry-actions-row">
                 <button type="button" className={`btn btn-ghost ${previewFlashing ? "flash" : ""}`} onClick={onPreview} disabled={actionsDisabled}>PREVIEW</button>
