@@ -8,8 +8,18 @@ services:
     envVars:
       - key: APP_ENV
         value: staging
+      - key: APP_ALLOW_ROLE_OVERRIDE
+        value: "false"
+      - key: OPS_REQUIRE_AUTH
+        value: "true"
       - key: AUTH_REQUIRE_LOGIN
         value: "true"
+      - key: AUTH_COOKIE_SAMESITE
+        value: none
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: ALLOW_SQLITE_FALLBACK
+        value: "false"
       - key: BROKER_MODE
         value: paper
       - key: ALLOW_LIVE_TRADING
