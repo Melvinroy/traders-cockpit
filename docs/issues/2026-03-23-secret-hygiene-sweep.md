@@ -1,10 +1,10 @@
 # Secret Hygiene Sweep
 
-> Status: In Progress
+> Status: Closed
 > Branch: `codex/bugfix-secret-hygiene`
 > Opened: 2026-03-23
-> Closed: -
-> Closing Commit: -
+> Closed: 2026-03-23
+> Closing Commit: `1ed5f09`
 
 ## Problem
 
