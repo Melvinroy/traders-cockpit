@@ -19,18 +19,27 @@ $frontendOut = Join-Path $repoRoot "frontend.out.log"
 $frontendErr = Join-Path $repoRoot "frontend.err.log"
 $frontendProdOut = Join-Path $repoRoot "frontend.prod.out.log"
 $frontendProdErr = Join-Path $repoRoot "frontend.prod.err.log"
+$frontendNextDir = Join-Path $frontendDir ".next"
 $playwrightOutputDir = Join-Path $frontendDir "output\\playwright"
 $profileEnv = Get-LocalProfileEnv -RepoRoot $repoRoot -EnvFile $EnvFile -PersonalPaper:$PersonalPaper
 $qcAuthUsername = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_USERNAME" -Default "admin"
 $qcAuthPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "change-me-admin"
 
+function Reset-FrontendNextCache {
+  if (Test-Path $frontendNextDir) {
+    cmd /c "rmdir /s /q ""$frontendNextDir""" | Out-Null
+  }
+}
+
 function Start-FrontendDev {
   param([int]$Port)
+
+  Reset-FrontendNextCache
 
   $frontendCmd = @(
     "set ""NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:$BackendPort""",
     "set ""NEXT_PUBLIC_WS_URL=ws://127.0.0.1:$BackendPort/ws/cockpit""",
-    "npm run dev -- --port $Port"
+    "npx next dev -p $Port"
   ) -join " && "
 
   Start-Process -FilePath "cmd.exe" `
