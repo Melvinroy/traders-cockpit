@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from math import floor
 from random import uniform
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.adapters.broker import AlpacaBrokerAdapter, PaperBrokerAdapter
@@ -157,7 +157,9 @@ class CockpitService:
                 broker = self.broker.place_market_order(symbol, setup.shares, "buy")
                 entry_filled = False
                 broker_status = "PENDING"
-                entry_message = "Market closed. Order accepted and queued for the next regular session."
+                entry_message = (
+                    "Market closed. Order accepted and queued for the next regular session."
+                )
             else:
                 broker = self.broker.place_limit_order(
                     symbol,
@@ -249,7 +251,12 @@ class CockpitService:
             self._log(db, symbol, "exec", entry_message)
         else:
             self._log(db, symbol, "warn", entry_message)
-        self._log(db, symbol, "sys", "Tranches: " + " \u00b7 ".join(f"T{i+1}={qty}sh" for i, qty in enumerate(qtys)))
+        self._log(
+            db,
+            symbol,
+            "sys",
+            "Tranches: " + " \u00b7 ".join(f"T{i+1}={qty}sh" for i, qty in enumerate(qtys)),
+        )
         db.commit()
         view = self.get_position(db, symbol)
         await self._broadcast_position_bundle(db, view, pnl=0.0)
@@ -258,7 +265,9 @@ class CockpitService:
     async def apply_stops(self, db: Session, payload: StopsRequest) -> PositionView:
         position = self._require_position(db, payload.symbol)
         self._ensure_position_is_open(position)
-        self._ensure_position_filled(position, "Protective orders are unavailable until the entry order is filled.")
+        self._ensure_position_filled(
+            position, "Protective orders are unavailable until the entry order is filled."
+        )
         self._validate_stop_mode(payload.stopMode, payload.stopModes)
         self._reject_duplicate_active_stops(db, position.symbol)
         stop_range = round(position.entry_price - position.stop_price, 2)
@@ -305,7 +314,12 @@ class CockpitService:
             qty = sum(item["qty"] for item in group)
             price = position.entry_price if config.mode == "be" else group[0]["stop"]
             stop_lines.append(f"S{index+1} {qty}sh @ {price:.2f} ({pct:.2f}%)")
-        self._log(db, position.symbol, "warn", f"\u2713 Stops applied \u2014 {' \u00b7 '.join(stop_lines)}")
+        self._log(
+            db,
+            position.symbol,
+            "warn",
+            f"\u2713 Stops applied \u2014 {' \u00b7 '.join(stop_lines)}",
+        )
         db.commit()
         view = self.get_position(db, position.symbol)
         await self._broadcast_position_bundle(db, view)
@@ -329,7 +343,9 @@ class CockpitService:
                 runner_stop = self._trail_stop(position.live_price, mode.trail, mode.trailUnit)
                 tranche["mode"] = "runner"
                 tranche["runnerStop"] = runner_stop
-                broker = self.broker.place_trailing_stop(position.symbol, tranche["qty"], mode.trail, mode.trailUnit)
+                broker = self.broker.place_trailing_stop(
+                    position.symbol, tranche["qty"], mode.trail, mode.trailUnit
+                )
                 db.add(
                     OrderEntity(
                         order_id=self._next_order_id(db),
@@ -383,7 +399,12 @@ class CockpitService:
         position.updated_at = utcnow()
         if executed_count == 0 and phase == "runner_only":
             raise ValueError("No executable profit tranches remain; runner already active")
-        self._log(db, position.symbol, "exec", f"\u2713 Profit plan executed \u2014 {executed_count} tranche(s) filled")
+        self._log(
+            db,
+            position.symbol,
+            "exec",
+            f"\u2713 Profit plan executed \u2014 {executed_count} tranche(s) filled",
+        )
         db.commit()
         view = self.get_position(db, position.symbol)
         await self._broadcast_position_bundle(db, view)
@@ -392,18 +413,26 @@ class CockpitService:
     async def move_to_be(self, db: Session, symbol: str) -> PositionView:
         position = self._require_position(db, symbol)
         self._ensure_position_is_open(position)
-        self._ensure_position_filled(position, "Protective orders are unavailable until the entry order is filled.")
+        self._ensure_position_filled(
+            position, "Protective orders are unavailable until the entry order is filled."
+        )
         position.tranches = [
             {**tranche, "stop": position.entry_price} if tranche["status"] == "active" else tranche
             for tranche in deepcopy(position.tranches)
         ]
-        for order in db.scalars(select(OrderEntity).where(OrderEntity.symbol == position.symbol, OrderEntity.type == "STOP")):
+        for order in db.scalars(
+            select(OrderEntity).where(
+                OrderEntity.symbol == position.symbol, OrderEntity.type == "STOP"
+            )
+        ):
             if order.status in {"ACTIVE", "MODIFIED"}:
                 order.price = position.entry_price
                 order.status = "MODIFIED"
         position.phase = "protected"
         position.updated_at = utcnow()
-        self._log(db, position.symbol, "warn", f"All stops \u2192 breakeven: {position.entry_price:.2f}")
+        self._log(
+            db, position.symbol, "warn", f"All stops \u2192 breakeven: {position.entry_price:.2f}"
+        )
         db.commit()
         view = self.get_position(db, position.symbol)
         await self._broadcast_position_bundle(db, view)
@@ -413,7 +442,9 @@ class CockpitService:
         position = self._require_position(db, symbol)
         self._ensure_position_is_open(position)
         if position.phase == "entry_pending":
-            root_order = db.scalar(select(OrderEntity).where(OrderEntity.order_id == position.root_order_id))
+            root_order = db.scalar(
+                select(OrderEntity).where(OrderEntity.order_id == position.root_order_id)
+            )
             if root_order and root_order.broker_order_id:
                 self.broker.cancel_order(root_order.broker_order_id)
             if root_order:
@@ -423,7 +454,9 @@ class CockpitService:
                 tranche["status"] = "canceled"
                 canceled_tranches.append(tranche)
             position.tranches = canceled_tranches
-            for order in db.scalars(select(OrderEntity).where(OrderEntity.symbol == position.symbol)):
+            for order in db.scalars(
+                select(OrderEntity).where(OrderEntity.symbol == position.symbol)
+            ):
                 if order.status in {"ACTIVE", "MODIFIED", "PENDING"}:
                     if order.broker_order_id:
                         self.broker.cancel_order(order.broker_order_id)
@@ -470,14 +503,21 @@ class CockpitService:
         position.phase = "closed"
         position.closed_at = utcnow()
         position.updated_at = utcnow()
-        self._log(db, position.symbol, "close", "\u2B1B POSITION FLATTENED \u2014 all tranches closed @ market")
+        self._log(
+            db,
+            position.symbol,
+            "close",
+            "\u2b1b POSITION FLATTENED \u2014 all tranches closed @ market",
+        )
         db.commit()
         view = self.get_position(db, position.symbol)
         await self._broadcast_position_bundle(db, view)
         return view
 
     def get_positions(self, db: Session) -> list[PositionView]:
-        positions = db.scalars(select(PositionEntity).order_by(PositionEntity.created_at.desc())).all()
+        positions = db.scalars(
+            select(PositionEntity).order_by(PositionEntity.created_at.desc())
+        ).all()
         return [self._position_view(db, position) for position in positions]
 
     def get_position(self, db: Session, symbol: str) -> PositionView:
@@ -490,19 +530,24 @@ class CockpitService:
                 select(OrderEntity)
                 .where(
                     OrderEntity.symbol == symbol.upper(),
-                    (OrderEntity.order_id == position.root_order_id) | (OrderEntity.parent_id == position.root_order_id),
+                    (OrderEntity.order_id == position.root_order_id)
+                    | (OrderEntity.parent_id == position.root_order_id),
                 )
                 .order_by(OrderEntity.created_at.asc())
             ).all()
         else:
             rows = db.scalars(
-                select(OrderEntity).where(OrderEntity.symbol == symbol.upper()).order_by(OrderEntity.created_at.asc())
+                select(OrderEntity)
+                .where(OrderEntity.symbol == symbol.upper())
+                .order_by(OrderEntity.created_at.asc())
             ).all()
         return [self._order_view(row) for row in rows]
 
     def get_logs(self, db: Session) -> list[LogEntry]:
         self.ensure_seed_data(db)
-        rows = db.scalars(select(TradeLogEntity).order_by(TradeLogEntity.created_at.desc()).limit(200)).all()
+        rows = db.scalars(
+            select(TradeLogEntity).order_by(TradeLogEntity.created_at.desc()).limit(200)
+        ).all()
         return [LogEntry.model_validate(row, from_attributes=True) for row in rows]
 
     def clear_logs(self, db: Session) -> int:
@@ -536,7 +581,9 @@ class CockpitService:
             ),
         )
 
-    def _build_setup_response(self, market: SetupMarketData, equity: float, risk_pct: float) -> SetupResponse:
+    def _build_setup_response(
+        self, market: SetupMarketData, equity: float, risk_pct: float
+    ) -> SetupResponse:
         entry = round((market.bid + market.ask) / 2, 2)
         final_stop = market.lod
         per_share_risk = round(max(0.01, entry - final_stop), 2)
@@ -615,17 +662,25 @@ class CockpitService:
         base = floor(100 / stop_mode)
         return float(100 - base * index) if index == stop_mode - 1 else float(base)
 
-    def _resolve_target_price(self, entry: float, per_share_risk: float, mode: TrancheMode) -> float:
+    def _resolve_target_price(
+        self, entry: float, per_share_risk: float, mode: TrancheMode
+    ) -> float:
         if mode.target == "Manual" and mode.manualPrice is not None:
             return round(mode.manualPrice, 2)
         multiplier = {"1R": 1, "2R": 2, "3R": 3}[mode.target]
         return round(entry + per_share_risk * multiplier, 2)
 
     def _trail_stop(self, live_price: float, trail: float, trail_unit: str) -> float:
-        return round(live_price - trail, 2) if trail_unit == "$" else round(live_price * (1 - trail / 100), 2)
+        return (
+            round(live_price - trail, 2)
+            if trail_unit == "$"
+            else round(live_price * (1 - trail / 100), 2)
+        )
 
     def _reduce_stop_orders(self, db: Session, symbol: str, tranche_id: str, qty_sold: int) -> None:
-        for order in db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.type == "STOP")):
+        for order in db.scalars(
+            select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.type == "STOP")
+        ):
             if order.status == "CANCELED" or tranche_id not in order.covered_tranches:
                 continue
             order.qty = max(0, order.qty - qty_sold)
@@ -636,13 +691,19 @@ class CockpitService:
         account = self.get_account(db)
         if entry * shares > account.equity * (self.settings.max_position_notional_pct / 100):
             raise ValueError("Position exceeds max notional cap")
-        if account.daily_realized_pnl < -(account.equity * (self.settings.daily_loss_limit_pct / 100)):
+        if account.daily_realized_pnl < -(
+            account.equity * (self.settings.daily_loss_limit_pct / 100)
+        ):
             raise ValueError("Daily loss limit reached")
         open_positions = [row for row in self.get_positions(db) if row.phase != "closed"]
         if len(open_positions) >= self.settings.max_open_positions:
             raise ValueError("Max open positions reached")
         self._cancel_stale_active_orders(db, symbol)
-        active = db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.status.in_(["ACTIVE", "MODIFIED"]))).all()
+        active = db.scalars(
+            select(OrderEntity).where(
+                OrderEntity.symbol == symbol, OrderEntity.status.in_(["ACTIVE", "MODIFIED"])
+            )
+        ).all()
         if active:
             raise ValueError("Duplicate active orders exist for this symbol")
 
@@ -666,11 +727,19 @@ class CockpitService:
 
     def _reject_duplicate_active_stops(self, db: Session, symbol: str) -> None:
         self._cancel_stale_active_orders(db, symbol)
-        active = db.scalars(select(OrderEntity).where(OrderEntity.symbol == symbol, OrderEntity.type == "STOP", OrderEntity.status.in_(["ACTIVE", "MODIFIED"]))).all()
+        active = db.scalars(
+            select(OrderEntity).where(
+                OrderEntity.symbol == symbol,
+                OrderEntity.type == "STOP",
+                OrderEntity.status.in_(["ACTIVE", "MODIFIED"]),
+            )
+        ).all()
         if active:
             raise ValueError("Active stop orders already exist for this symbol")
 
-    def _reject_duplicate_active_order(self, db: Session, symbol: str, tranche_id: str, order_type: str) -> None:
+    def _reject_duplicate_active_order(
+        self, db: Session, symbol: str, tranche_id: str, order_type: str
+    ) -> None:
         self._cancel_stale_active_orders(db, symbol)
         active = db.scalars(
             select(OrderEntity).where(
@@ -679,13 +748,18 @@ class CockpitService:
                 OrderEntity.status.in_(["ACTIVE", "MODIFIED"]),
             )
         ).all()
-        if any(tranche_id in (order.covered_tranches or []) or order.tranche_label == tranche_id for order in active):
+        if any(
+            tranche_id in (order.covered_tranches or []) or order.tranche_label == tranche_id
+            for order in active
+        ):
             raise ValueError(f"Active {order_type} order already exists for {tranche_id}")
 
     def _cancel_stale_active_orders(self, db: Session, symbol: str) -> None:
         position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == symbol))
-        if position is not None and position.phase != "closed" and any(
-            tranche["status"] == "active" for tranche in position.tranches
+        if (
+            position is not None
+            and position.phase != "closed"
+            and any(tranche["status"] == "active" for tranche in position.tranches)
         ):
             return
         stale_orders = db.scalars(
@@ -718,7 +792,9 @@ class CockpitService:
     def _mark_entry_filled_if_ready(self, db: Session, position: PositionEntity) -> None:
         if position.phase != "entry_pending":
             return
-        root_order = db.scalar(select(OrderEntity).where(OrderEntity.order_id == position.root_order_id))
+        root_order = db.scalar(
+            select(OrderEntity).where(OrderEntity.order_id == position.root_order_id)
+        )
         if root_order is None:
             return
         position.phase = "trade_entered"
@@ -746,9 +822,13 @@ class CockpitService:
 
     def _ensure_profit_actionable(self, position: PositionEntity) -> None:
         self._ensure_position_is_open(position)
-        self._ensure_position_filled(position, "Position management is unavailable until the entry order is filled.")
+        self._ensure_position_filled(
+            position, "Position management is unavailable until the entry order is filled."
+        )
         if position.phase not in {"protected", "P1_done", "P2_done", "runner_only"}:
-            raise ValueError("Profit execution requires a protected or active profit-managed position")
+            raise ValueError(
+                "Profit execution requires a protected or active profit-managed position"
+            )
 
     def _effective_account_mode(self, requested_mode: str) -> str:
         if requested_mode == "alpaca_live" and self._live_disabled_reason(requested_mode):
@@ -790,7 +870,9 @@ class CockpitService:
         if latest_log is not None:
             await self.ws_manager.broadcast(
                 "cockpit",
-                self._event("log_update", symbol=view.symbol, log=latest_log.model_dump(mode="json")),
+                self._event(
+                    "log_update", symbol=view.symbol, log=latest_log.model_dump(mode="json")
+                ),
             )
 
     def _latest_log_entry(self, db: Session, symbol: str | None = None) -> LogEntry | None:
@@ -872,5 +954,7 @@ class CockpitService:
 
     def _pnl(self, position: PositionView) -> float:
         entry = float(position.setup.get("entry", 0.0))
-        active_shares = sum(tranche.qty for tranche in position.tranches if tranche.status == "active")
+        active_shares = sum(
+            tranche.qty for tranche in position.tranches if tranche.status == "active"
+        )
         return round((position.livePrice - entry) * active_shares, 2)

@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_auth import require_session
 from app.db.session import get_db
-from app.schemas.cockpit import MoveToBeRequest, PositionView, ProfitRequest, StopsRequest, TradeEnterRequest, TradePreviewRequest
+from app.schemas.cockpit import (
+    MoveToBeRequest,
+    PositionView,
+    ProfitRequest,
+    StopsRequest,
+    TradeEnterRequest,
+    TradePreviewRequest,
+)
 from app.services.cockpit import CockpitService
 
 

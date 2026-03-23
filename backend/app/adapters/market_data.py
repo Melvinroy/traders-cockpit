@@ -8,7 +8,6 @@ import httpx
 
 from app.core.config import Settings
 
-
 MOCK_MARKET_DATA: dict[str, dict[str, float]] = {
     "AAPL": {
         "bid": 213.85,
@@ -146,7 +145,9 @@ class AlpacaPolygonMarketDataAdapter:
             return self._session_state_from_timestamp(datetime.now(UTC))
         if bool(clock_payload.get("is_open")):
             return "regular_open"
-        current = self._parse_quote_timestamp(str(clock_payload.get("timestamp") or "")) or datetime.now(UTC)
+        current = self._parse_quote_timestamp(
+            str(clock_payload.get("timestamp") or "")
+        ) or datetime.now(UTC)
         return self._session_state_from_timestamp(current)
 
     def _session_state_from_timestamp(self, timestamp: datetime) -> str:
@@ -162,7 +163,9 @@ class AlpacaPolygonMarketDataAdapter:
             return "after_hours"
         return "overnight"
 
-    def _latest_quote(self, client: httpx.Client, symbol: str) -> tuple[dict | None, datetime | None]:
+    def _latest_quote(
+        self, client: httpx.Client, symbol: str
+    ) -> tuple[dict | None, datetime | None]:
         response = client.get(f"/v2/stocks/{symbol}/quotes/latest")
         response.raise_for_status()
         quote = response.json().get("quote")
@@ -170,7 +173,9 @@ class AlpacaPolygonMarketDataAdapter:
             return None, None
         return quote, self._parse_quote_timestamp(str(quote.get("t") or ""))
 
-    def _snapshot_quote(self, client: httpx.Client, symbol: str) -> tuple[dict | None, datetime | None]:
+    def _snapshot_quote(
+        self, client: httpx.Client, symbol: str
+    ) -> tuple[dict | None, datetime | None]:
         response = client.get(f"/v2/stocks/{symbol}/snapshot")
         response.raise_for_status()
         quote = response.json().get("latestQuote")
@@ -178,7 +183,9 @@ class AlpacaPolygonMarketDataAdapter:
             return None, None
         return quote, self._parse_quote_timestamp(str(quote.get("t") or ""))
 
-    def _historical_quote(self, client: httpx.Client, symbol: str) -> tuple[dict | None, datetime | None]:
+    def _historical_quote(
+        self, client: httpx.Client, symbol: str
+    ) -> tuple[dict | None, datetime | None]:
         response = client.get(
             f"/v2/stocks/{symbol}/quotes",
             params={"limit": 1, "sort": "desc", "feed": "iex"},
@@ -221,13 +228,17 @@ class AlpacaPolygonMarketDataAdapter:
                     quote_timestamp = latest_timestamp
                     quote_state = "live_quote"
                 else:
-                    snapshot_quote, snapshot_timestamp = self._snapshot_quote(client, symbol.upper())
+                    snapshot_quote, snapshot_timestamp = self._snapshot_quote(
+                        client, symbol.upper()
+                    )
                     if self._has_usable_bid_ask(snapshot_quote):
                         quote = snapshot_quote
                         quote_timestamp = snapshot_timestamp
                         quote_state = "cached_quote"
                     else:
-                        historical_quote, historical_timestamp = self._historical_quote(client, symbol.upper())
+                        historical_quote, historical_timestamp = self._historical_quote(
+                            client, symbol.upper()
+                        )
                         if self._has_usable_bid_ask(historical_quote):
                             quote = historical_quote
                             quote_timestamp = historical_timestamp

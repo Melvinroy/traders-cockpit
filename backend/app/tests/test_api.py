@@ -99,7 +99,9 @@ def test_postgres_urls_normalize_to_psycopg_driver() -> None:
     assert _normalize_database_url("sqlite:///./data/test.db") == "sqlite:///./data/test.db"
 
 
-def test_local_personal_paper_ready_requires_real_alpaca_creds(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_personal_paper_ready_requires_real_alpaca_creds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("BROKER_MODE", "alpaca_paper")
     monkeypatch.setenv("ALLOW_LIVE_TRADING", "false")
     monkeypatch.setenv("ALPACA_API_KEY_ID", "paper-key")
@@ -110,7 +112,9 @@ def test_local_personal_paper_ready_requires_real_alpaca_creds(monkeypatch: pyte
     assert Settings.from_env().local_personal_paper_ready is False
 
 
-def test_alpaca_market_order_fails_loudly_without_mock_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_alpaca_market_order_fails_loudly_without_mock_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("BROKER_MODE", "alpaca_paper")
     monkeypatch.setenv("ALLOW_CONTROLLER_MOCK", "false")
     monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
@@ -140,7 +144,9 @@ def test_setup_fails_loudly_when_real_quote_is_unavailable() -> None:
 
 
 def test_login_creates_session_and_me_resolves_user() -> None:
-    login = client.post("/api/auth/login", json={"username": "admin", "password": "change-me-admin"})
+    login = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "change-me-admin"}
+    )
     assert login.status_code == 200
     payload = login.json()
     assert payload["username"] == "admin"
@@ -167,7 +173,9 @@ def test_staging_cookie_settings_can_support_hosted_preview() -> None:
     routes_auth_module.settings.auth_cookie_samesite = "none"
     routes_auth_module.settings.auth_cookie_secure = True
     try:
-        login = client.post("/api/auth/login", json={"username": "admin", "password": "change-me-admin"})
+        login = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "change-me-admin"}
+        )
         assert login.status_code == 200
         cookie_header = login.headers.get("set-cookie", "").lower()
         assert "samesite=none" in cookie_header
@@ -185,7 +193,9 @@ def test_sensitive_routes_require_session_when_auth_is_enabled() -> None:
         unauthenticated = client.get("/api/account")
         assert unauthenticated.status_code == 401
 
-        login = client.post("/api/auth/login", json={"username": "admin", "password": "change-me-admin"})
+        login = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "change-me-admin"}
+        )
         assert login.status_code == 200
 
         authenticated = client.get("/api/account")
@@ -248,13 +258,16 @@ def test_trade_lifecycle() -> None:
     assert stops.status_code == 200
     assert stops.json()["phase"] == "protected"
 
-    profit = client.post("/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()})
+    profit = client.post(
+        "/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()}
+    )
     assert profit.status_code == 200
     profit_state = profit.json()
     assert profit_state["phase"] in {"P2_done", "runner_only", "closed"}
     assert len(profit_state["orders"]) >= 4
     assert all(
-        order["id"] == profit_state["rootOrderId"] or order.get("parentId") == profit_state["rootOrderId"]
+        order["id"] == profit_state["rootOrderId"]
+        or order.get("parentId") == profit_state["rootOrderId"]
         for order in profit_state["orders"]
     )
 
@@ -305,7 +318,9 @@ def test_three_stop_mode_defaults_to_33_33_34_when_pct_is_blank() -> None:
 
 
 def test_account_update() -> None:
-    update = client.put("/api/account/settings", json={"equity": 30000, "risk_pct": 1.5, "mode": "paper"})
+    update = client.put(
+        "/api/account/settings", json={"equity": 30000, "risk_pct": 1.5, "mode": "paper"}
+    )
     assert update.status_code == 200
     data = update.json()
     assert data["equity"] == 30000
@@ -315,7 +330,9 @@ def test_account_update() -> None:
 
 
 def test_live_mode_is_gated_by_default() -> None:
-    update = client.put("/api/account/settings", json={"equity": 30000, "risk_pct": 1.5, "mode": "alpaca_live"})
+    update = client.put(
+        "/api/account/settings", json={"equity": 30000, "risk_pct": 1.5, "mode": "alpaca_live"}
+    )
     assert update.status_code == 400
     assert "Live trading is disabled" in update.text
 
@@ -365,9 +382,13 @@ def test_runner_cannot_be_reexecuted_once_active() -> None:
             ],
         },
     )
-    first_profit = client.post("/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()})
+    first_profit = client.post(
+        "/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()}
+    )
     assert first_profit.status_code == 200
-    second_profit = client.post("/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()})
+    second_profit = client.post(
+        "/api/trade/profit", json={"symbol": "AAPL", "trancheModes": tranche_modes()}
+    )
     assert second_profit.status_code == 400
     assert "Active TRAIL order already exists" in second_profit.text
 
@@ -439,7 +460,11 @@ def test_off_hours_queue_for_open_creates_pending_entry() -> None:
     def fake_setup(_db, _symbol: str):
         setup = original_get_setup(_db, "AAPL")
         return setup.model_copy(
-            update={"sessionState": "closed", "quoteState": "cached_quote", "executionProvider": "alpaca_paper"}
+            update={
+                "sessionState": "closed",
+                "quoteState": "cached_quote",
+                "executionProvider": "alpaca_paper",
+            }
         )
 
     service.get_setup = fake_setup

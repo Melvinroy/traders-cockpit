@@ -81,7 +81,9 @@ class SetupResponse(BaseModel):
     technicalsAreFallback: bool = True
     fallbackReason: str | None = None
     quoteTimestamp: datetime | None = None
-    sessionState: Literal["regular_open", "overnight", "pre_market", "after_hours", "closed"] = "closed"
+    sessionState: Literal["regular_open", "overnight", "pre_market", "after_hours", "closed"] = (
+        "closed"
+    )
     quoteState: Literal["live_quote", "cached_quote", "quote_unavailable"] = "quote_unavailable"
     entryBasis: str = "midpoint"
     stopReferenceDefault: str = "lod"

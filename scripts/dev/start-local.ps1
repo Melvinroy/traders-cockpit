@@ -14,6 +14,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Get-RepoRoot
 $backendDir = Join-Path $repoRoot "backend"
 $frontendDir = Join-Path $repoRoot "frontend"
+$frontendNextDir = Join-Path $frontendDir ".next"
 $backendOut = Join-Path $repoRoot "backend.out.log"
 $backendErr = Join-Path $repoRoot "backend.err.log"
 $frontendOut = Join-Path $repoRoot "frontend.out.log"
@@ -117,10 +118,14 @@ Invoke-RestMethod `
   -Body $accountBody `
   -WebSession $authSession | Out-Null
 
+if (Test-Path $frontendNextDir) {
+  cmd /c "rmdir /s /q ""$frontendNextDir""" | Out-Null
+}
+
 $frontendCmd = @(
   "set ""NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:$BackendPort""",
   "set ""NEXT_PUBLIC_WS_URL=ws://127.0.0.1:$BackendPort/ws/cockpit""",
-  "npm run dev -- --port $FrontendPort"
+  "npx next dev -p $FrontendPort"
 ) -join " && "
 
 Start-Process -FilePath "cmd.exe" `

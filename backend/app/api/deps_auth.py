@@ -12,7 +12,11 @@ auth_store = get_auth_store(settings)
 
 
 def _default_user() -> dict[str, Any]:
-    username = settings.auth_admin_username if settings.app_default_role == "admin" else settings.auth_trader_username
+    username = (
+        settings.auth_admin_username
+        if settings.app_default_role == "admin"
+        else settings.auth_trader_username
+    )
     return {
         "user": {
             "id": 0,
