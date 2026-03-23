@@ -95,6 +95,52 @@ The hosted env check now rejects:
 - insecure auth cookie settings
 - missing live confirmation token when live trading is enabled
 
+## Hosted Smoke
+
+After the hosted backend and frontend are deployed, run the browser smoke against the real URLs:
+
+```powershell
+Copy-Item .env.production.example .env.production.local
+# Edit .env.production.local with the hosted admin credentials
+.\scripts\dev\run-hosted-smoke.ps1 `
+  -FrontendUrl "https://app.example.com" `
+  -BackendUrl "https://api.example.com" `
+  -EnvFile ".env.production.local"
+```
+
+For local validation of the wrapper against a non-hosted stack, you can override the auth credentials explicitly:
+
+```powershell
+.\scripts\dev\run-hosted-smoke.ps1 `
+  -FrontendUrl "http://127.0.0.1:3094" `
+  -BackendUrl "http://127.0.0.1:8094" `
+  -EnvFile ".env.production.example" `
+  -AuthUsername "admin" `
+  -AuthPassword "change-me-admin"
+```
+
+Expected artifacts:
+
+- `frontend/output/playwright/hosted-smoke.png`
+- `frontend/output/playwright/hosted-smoke.console.txt`
+- `frontend/output/playwright/hosted-smoke.network.txt`
+
+The hosted smoke reuses the same login and setup-load browser path as the local smoke flow, but points it at the hosted frontend/backend pair you provide.
+
+## Current Render Tradeoff
+
+The current Render blueprint keeps auth state on a persistent disk:
+
+- disk mount: `/var/lib/traders-cockpit/auth`
+- auth DB path: `/var/lib/traders-cockpit/auth/auth.db`
+
+This is the current hosted-safe compromise for durable auth sessions, but it has tradeoffs:
+
+- attached persistent disks limit scaling options
+- disk-backed auth on a single web service is not the long-term multi-instance design
+
+The follow-up production tranche should migrate hosted auth persistence to Postgres if multi-instance scaling becomes a real requirement.
+
 ## Promotion Path
 
 1. Deploy backend staging.

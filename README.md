@@ -435,6 +435,26 @@ Validate hosted envs before deploy:
 .\scripts\dev\check-hosted-env.ps1 -EnvFile ".env"
 ```
 
+Hosted browser smoke:
+
+```powershell
+.\scripts\dev\run-hosted-smoke.ps1 `
+  -FrontendUrl "https://app.example.com" `
+  -BackendUrl "https://api.example.com" `
+  -EnvFile ".env.production.local"
+```
+
+For local validation of the hosted smoke wrapper, add explicit auth overrides:
+
+```powershell
+.\scripts\dev\run-hosted-smoke.ps1 `
+  -FrontendUrl "http://127.0.0.1:3094" `
+  -BackendUrl "http://127.0.0.1:8094" `
+  -EnvFile ".env.production.example" `
+  -AuthUsername "admin" `
+  -AuthPassword "change-me-admin"
+```
+
 More deployment detail lives in [docs/process/HOSTED_DEPLOYMENT.md](docs/process/HOSTED_DEPLOYMENT.md).
 
 ## Roadmap
