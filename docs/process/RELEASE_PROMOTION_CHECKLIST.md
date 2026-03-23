@@ -14,20 +14,24 @@ Use this checklist before opening or merging a promotion PR from `codex/integrat
 ## Required validation
 
 - backend CI passed on the current integration commit
+- migration smoke CI passed on the current integration commit if schema-affecting files changed
 - frontend CI passed on the current integration commit
 - local backend `pytest -q` passed if backend changed
 - local frontend `npm run lint`, `npm run test`, and `npm run build` passed if frontend changed
 - browser QC evidence exists for visible UI changes
 - the five cockpit baseline screenshots are refreshed for cockpit-state work
 - production-facing UI work is promoted only after browser QC evidence is attached on the integration candidate
+- if the target is a hosted environment, post-deploy smoke evidence exists or is explicitly scheduled as the first post-merge verification step
 
 ## Release review questions
 
 - does this release follow the merge sequence `codex/* -> codex/integration-app -> main`
 - does this promotion contain only staged, reviewed work
 - are all schema or env changes reflected in docs
+- is there a backup or snapshot plan for any schema-affecting promotion
 - are any live-trading controls still safely gated
 - can this release be rolled back by reverting the promotion merge
+- is there a hosted smoke plan with frontend URL, backend URL, env file, and artifact destination
 
 ## After merge to `main`
 
@@ -44,5 +48,6 @@ Use this checklist before opening or merging a promotion PR from `codex/integrat
 
 - verify the promoted `main` commit is the same commit reviewed in the promotion PR
 - rerun the post-merge smoke or hosted-health checks required for the target environment
+- for hosted targets, rerun `.\scripts\dev\run-hosted-smoke.ps1` and retain `hosted-smoke.health.json`, screenshot, console, and network artifacts
 - confirm baseline artifacts and validation notes are still linked from the promotion PR
 - record any first-24-hour monitoring follow-up in `docs/handoffs/`

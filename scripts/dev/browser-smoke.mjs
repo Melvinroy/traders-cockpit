@@ -142,7 +142,7 @@ try {
   await fs.mkdir(outputDir, { recursive: true });
   await seedAuthSession(page);
 
-  const response = await page.goto(frontendUrl, { waitUntil: "networkidle" });
+  const response = await page.goto(frontendUrl, { waitUntil: "load" });
   if (!response || response.status() >= 400) {
     throw new Error(`Frontend root failed to load cleanly at ${frontendUrl}.`);
   }

@@ -4,6 +4,11 @@ Hosted deployment is a trailing deliverable. Validate the local paper-trading pa
 
 Use `.env.production.example` as the public hosted config contract. Copy it to a private env file, fill in real values, and keep `.env.example` reserved for deterministic local development.
 
+Supporting docs:
+
+- [Post-Deploy Smoke](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit-hosted-ops/docs/process/POST_DEPLOY_SMOKE.md)
+- [Support Runbook](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit-hosted-ops/docs/process/SUPPORT_RUNBOOK.md)
+
 ## Recommended Topology
 
 - Frontend: Vercel
@@ -126,11 +131,12 @@ For local validation of the wrapper against a non-hosted stack, you can override
 
 Expected artifacts:
 
+- `frontend/output/playwright/hosted-smoke.health.json`
 - `frontend/output/playwright/hosted-smoke.png`
 - `frontend/output/playwright/hosted-smoke.console.txt`
 - `frontend/output/playwright/hosted-smoke.network.txt`
 
-The hosted smoke reuses the same login and setup-load browser path as the local smoke flow, but points it at the hosted frontend/backend pair you provide.
+The hosted smoke now validates the hosted env contract, checks `/health/live`, `/health/ready`, and `/health/deps`, writes a health artifact, and then reuses the same login and setup-load browser path as the local smoke flow against the hosted frontend/backend pair you provide.
 
 ## Hosted Auth Persistence
 
@@ -147,5 +153,6 @@ Local development can still use `AUTH_STORAGE_MODE=file` with `AUTH_DB_PATH`, bu
 2. Confirm `/health/live` and `/health/ready` both work.
 3. Configure frontend public envs.
 4. Deploy frontend preview/staging.
-5. Run browser smoke against hosted URLs.
-6. Promote only after hosted smoke passes.
+5. Run hosted post-deploy smoke against the real URLs.
+6. Link the smoke artifacts in the release handoff or promotion PR.
+7. Promote only after hosted smoke passes.

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.adapters.broker import AlpacaBrokerAdapter, BrokerEntryOrder, PaperBrokerAdapter
 from app.adapters.market_data import AlpacaPolygonMarketDataAdapter, SetupMarketData
 from app.core.config import Settings
+from app.core.observability import get_request_id
 from app.models.entities import AccountSettingsEntity, OrderEntity, PositionEntity, TradeLogEntity
 from app.schemas.cockpit import (
     AccountSettingsUpdate,
@@ -1499,12 +1500,16 @@ class CockpitService:
         return LogEntry.model_validate(row, from_attributes=True)
 
     def _event(self, event_type: str, **payload: object) -> dict[str, object]:
-        return {
+        event: dict[str, object] = {
             "type": event_type,
             "version": "2026-03-21",
             "timestamp": utcnow().isoformat(),
             **payload,
         }
+        request_id = get_request_id()
+        if request_id:
+            event["requestId"] = request_id
+        return event
 
     def _next_order_id(self, db: Session) -> str:
         persisted_max = 0
@@ -1531,6 +1536,8 @@ class CockpitService:
         broker_payload: dict | None = None,
         position_side: str = "buy",
     ) -> OrderView:
+        created_at = self._normalize_timestamp(row.created_at)
+        filled_at = self._normalize_timestamp(row.filled_at)
         filled_qty = (
             self._broker_filled_qty(broker_payload)
             if broker_payload
@@ -1564,13 +1571,13 @@ class CockpitService:
                 if broker_payload
                 else row.status in {"ACTIVE", "MODIFIED", "PENDING"}
             ),
-            createdAt=row.created_at,
+            createdAt=created_at,
             updatedAt=(
                 self._broker_timestamp(broker_payload, "updated_at")
                 if broker_payload
-                else row.filled_at or row.created_at
+                else filled_at or created_at
             ),
-            filledAt=row.filled_at,
+            filledAt=filled_at,
             fillPrice=(
                 self._broker_fill_price(broker_payload, row.fill_price)
                 if broker_payload
@@ -1651,6 +1658,11 @@ class CockpitService:
         except ValueError:
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+    def _normalize_timestamp(self, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
 
     def _broker_qty(self, payload: dict | None) -> int:
         if not payload:

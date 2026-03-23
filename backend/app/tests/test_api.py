@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 
+import httpx
 import pytest
 from sqlalchemy import select
+from starlette.websockets import WebSocketDisconnect
 
 db_path = Path(__file__).resolve().parent / "test.db"
 if db_path.exists():
@@ -22,8 +25,8 @@ os.environ["AUTH_REQUIRE_LOGIN"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.adapters.broker import AlpacaBrokerAdapter  # noqa: E402
-from app.adapters.market_data import SetupMarketData  # noqa: E402
+from app.adapters.broker import AlpacaBrokerAdapter, BrokerEntryOrder  # noqa: E402
+from app.adapters.market_data import AlpacaPolygonMarketDataAdapter, SetupMarketData  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app, service  # noqa: E402
@@ -36,7 +39,11 @@ from app.models.entities import (  # noqa: E402
 from app.schemas.cockpit import TrancheMode  # noqa: E402
 from app.services.auth import FAILED_LOGIN_LIMIT, get_auth_store  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
-from app.core.observability import REQUEST_ID_HEADER  # noqa: E402
+from app.core.observability import (  # noqa: E402
+    REQUEST_ID_HEADER,
+    bind_request_id,
+    reset_request_id,
+)
 from app.api import deps_auth  # noqa: E402
 from app import main as main_module  # noqa: E402
 
@@ -227,6 +234,28 @@ def test_request_completion_logs_include_request_context(
     assert isinstance(request_event["duration_ms"], float | int)
 
 
+def test_websocket_auth_failure_logs_request_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    previous = deps_auth.settings.auth_require_login
+    deps_auth.settings.auth_require_login = True
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    try:
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(
+                "/ws/cockpit?request_id=req-ws-auth-fail&client_session_id=ws-client-auth-fail"
+            ) as websocket:
+                websocket.receive_text()
+    finally:
+        deps_auth.settings.auth_require_login = previous
+
+    events = structured_events(caplog)
+    auth_event = next(event for event in events if event.get("event") == "ws.auth.failed")
+    assert auth_event["request_id"] == "req-ws-auth-fail"
+    assert auth_event["client_session_id"] == "ws-client-auth-fail"
+    assert auth_event["path"] == "/ws/cockpit"
+
+
 def test_postgres_urls_normalize_to_psycopg_driver() -> None:
     assert (
         _normalize_database_url("postgresql://user:pass@host:5432/dbname")
@@ -263,6 +292,129 @@ def test_alpaca_market_order_fails_loudly_without_mock_fallback(
     adapter = AlpacaBrokerAdapter(Settings.from_env())
     with pytest.raises(ValueError, match="credentials are missing"):
         adapter.place_market_order("MSFT", 10, "buy")
+
+
+def test_alpaca_entry_fallback_logs_structured_event(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("BROKER_MODE", "alpaca_paper")
+    monkeypatch.setenv("ALLOW_CONTROLLER_MOCK", "true")
+    monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
+    monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
+
+    adapter = AlpacaBrokerAdapter(Settings.from_env())
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    token = bind_request_id("req-broker-fallback-1")
+    try:
+        result = adapter.place_entry_order(
+            BrokerEntryOrder(
+                symbol="MSFT",
+                qty=10,
+                side="buy",
+                order_type="limit",
+                time_in_force="day",
+                limit_price=380.5,
+            )
+        )
+    finally:
+        reset_request_id(token)
+
+    assert result.status == "FILLED"
+    events = structured_events(caplog)
+    fallback_event = next(
+        event for event in events if event.get("event") == "broker.entry.submit.fallback"
+    )
+    assert fallback_event["request_id"] == "req-broker-fallback-1"
+    assert fallback_event["symbol"] == "MSFT"
+    assert fallback_event["order_type"] == "limit"
+    assert fallback_event["fallback_status"] == "FILLED"
+    assert fallback_event["outcome"] == "fallback"
+
+
+def test_market_data_fallback_logs_structured_event(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("BROKER_MODE", "alpaca_paper")
+    monkeypatch.setenv("ALLOW_CONTROLLER_MOCK", "true")
+    monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
+    monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
+
+    adapter = AlpacaPolygonMarketDataAdapter(Settings.from_env())
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    token = bind_request_id("req-market-fallback-1")
+    try:
+        payload = adapter.get_setup_data("MSFT")
+    finally:
+        reset_request_id(token)
+
+    assert payload.provider == "mock"
+    events = structured_events(caplog)
+    fallback_event = next(
+        event for event in events if event.get("event") == "market_data.setup.fallback"
+    )
+    assert fallback_event["request_id"] == "req-market-fallback-1"
+    assert fallback_event["symbol"] == "MSFT"
+    assert fallback_event["reason"] == "alpaca_credentials_missing"
+    assert fallback_event["outcome"] == "fallback"
+
+
+def test_wait_for_position_logs_retry_and_success(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import time
+
+    monkeypatch.setenv("BROKER_MODE", "alpaca_paper")
+    monkeypatch.setenv("ALLOW_CONTROLLER_MOCK", "false")
+    monkeypatch.setenv("ALPACA_API_KEY_ID", "paper-key")
+    monkeypatch.setenv("ALPACA_API_SECRET_KEY", "paper-secret")
+
+    adapter = AlpacaBrokerAdapter(Settings.from_env())
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    responses = [
+        httpx.Response(404, request=httpx.Request("GET", "https://example.test/v2/positions/MSFT")),
+        httpx.Response(
+            200,
+            request=httpx.Request("GET", "https://example.test/v2/positions/MSFT"),
+            json={"qty": "5"},
+        ),
+    ]
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, _url: str):
+            return responses.pop(0)
+
+    monkeypatch.setattr(adapter, "_client", lambda: FakeClient())
+    token = bind_request_id("req-wait-1")
+    try:
+        qty = adapter.wait_for_position("MSFT", min_qty=5, timeout_seconds=1.0)
+    finally:
+        reset_request_id(token)
+
+    assert qty == 5
+    events = structured_events(caplog)
+    retry_event = next(
+        event for event in events if event.get("event") == "broker.position.wait.retry"
+    )
+    success_event = next(
+        event for event in events if event.get("event") == "broker.position.wait.succeeded"
+    )
+    assert retry_event["request_id"] == "req-wait-1"
+    assert retry_event["symbol"] == "MSFT"
+    assert retry_event["attempt"] == 1
+    assert retry_event["outcome"] == "retry"
+    assert success_event["request_id"] == "req-wait-1"
+    assert success_event["symbol"] == "MSFT"
+    assert success_event["qty"] == 5
+    assert success_event["attempts"] == 2
+    assert success_event["outcome"] == "success"
 
 
 def test_setup_fails_loudly_when_real_quote_is_unavailable() -> None:
@@ -557,6 +709,75 @@ def test_trade_preview_logs_request_scoped_event(caplog: pytest.LogCaptureFixtur
     assert preview_event["symbol"] == "AAPL"
     assert preview_event["order_type"] == "limit"
     assert preview_event["outcome"] == "success"
+
+
+def test_websocket_subscribe_logs_lifecycle_and_propagates_request_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+            "order": simple_entry_order(orderType="market"),
+        },
+    )
+    assert enter.status_code == 200
+
+    with client.websocket_connect(
+        "/ws/cockpit?request_id=req-ws-connect-1&client_session_id=ws-client-1"
+    ) as websocket:
+        websocket.send_text(
+            json.dumps(
+                {
+                    "action": "subscribe_price",
+                    "symbol": "AAPL",
+                    "requestId": "req-ws-message-1",
+                    "clientSessionId": "ws-client-1",
+                }
+            )
+        )
+        payload = json.loads(websocket.receive_text())
+
+    assert payload["type"] == "price_update"
+    assert payload["symbol"] == "AAPL"
+    assert payload["requestId"] == "req-ws-message-1"
+
+    events = structured_events(caplog)
+    connect_event = next(event for event in events if event.get("event") == "ws.connect")
+    message_event = next(event for event in events if event.get("event") == "ws.message.received")
+    broadcast_event = next(
+        event
+        for event in events
+        if event.get("event") == "ws.broadcast"
+        and event.get("event_type") == "price_update"
+        and event.get("request_id") == "req-ws-message-1"
+    )
+    disconnect_event = next(event for event in events if event.get("event") == "ws.disconnect")
+
+    assert connect_event["request_id"] == "req-ws-connect-1"
+    assert connect_event["client_session_id"] == "ws-client-1"
+    assert connect_event["channel"] == "cockpit"
+    assert message_event["request_id"] == "req-ws-message-1"
+    assert message_event["client_session_id"] == "ws-client-1"
+    assert message_event["action"] == "subscribe_price"
+    assert message_event["symbol"] == "AAPL"
+    assert broadcast_event["request_id"] == "req-ws-message-1"
+    assert broadcast_event["client_session_id"] == "ws-client-1"
+    assert broadcast_event["event_type"] == "price_update"
+    assert broadcast_event["symbol"] == "AAPL"
+    assert disconnect_event["request_id"] == "req-ws-connect-1"
+    assert disconnect_event["client_session_id"] == "ws-client-1"
 
 
 def test_trade_lifecycle() -> None:
@@ -1328,6 +1549,56 @@ def test_recent_orders_merge_broker_state_and_cancel() -> None:
         service.broker.list_recent_orders = original_list_recent_orders
         service.broker.get_order = original_get_order
         service.broker.cancel_order = original_cancel_order
+
+
+def test_recent_orders_handles_mixed_naive_and_aware_timestamps() -> None:
+    with SessionLocal() as db:
+        db.add(
+            OrderEntity(
+                order_id="ORD-9301",
+                broker_order_id="broker-mixed-1",
+                symbol="AAPL",
+                type="LMT",
+                qty=10,
+                orig_qty=10,
+                price=101.25,
+                status="PENDING",
+                tranche_label="AAPL",
+                covered_tranches=[],
+                parent_id=None,
+                created_at=datetime(2026, 3, 22, 10, 0, 0),
+            )
+        )
+        db.commit()
+
+    original_list_recent_orders = service.broker.list_recent_orders
+
+    def fake_list_recent_orders(limit: int = 50):
+        return [
+            {
+                "id": "broker-mixed-1",
+                "client_order_id": "client-mixed-1",
+                "symbol": "AAPL",
+                "side": "buy",
+                "type": "limit",
+                "qty": "10",
+                "filled_qty": "0",
+                "limit_price": "101.25",
+                "status": "accepted",
+                "created_at": "2026-03-22T10:00:00Z",
+                "updated_at": "2026-03-22T10:00:05Z",
+            }
+        ][:limit]
+
+    service.broker.list_recent_orders = fake_list_recent_orders
+    try:
+        response = client.get("/api/orders")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload[0]["brokerOrderId"] == "broker-mixed-1"
+        assert payload[0]["updatedAt"].startswith("2026-03-22T10:00:05")
+    finally:
+        service.broker.list_recent_orders = original_list_recent_orders
 
 
 def test_cancel_recent_order_logs_request_scoped_event(

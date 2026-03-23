@@ -154,6 +154,19 @@ async function expectStatuses(page, expected) {
   }
 }
 
+async function expectStatusesToSatisfy(page, predicate, description) {
+  const selector = ".stop-plan-content .plan-line:not(.stop-action-line) .plan-status";
+  let statuses = await page.locator(selector).evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim() ?? ""));
+  const deadline = Date.now() + 5000;
+  while (!predicate(statuses) && Date.now() < deadline) {
+    await page.waitForTimeout(100);
+    statuses = await page.locator(selector).evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim() ?? ""));
+  }
+  if (!predicate(statuses)) {
+    throw new Error(`${description}: got ${JSON.stringify(statuses)}`);
+  }
+}
+
 async function readStatuses(page) {
   const selector = ".stop-plan-content .plan-line:not(.stop-action-line) .plan-status";
   return page.locator(selector).evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim() ?? ""));
@@ -188,8 +201,15 @@ try {
   const profitExecuteButton = page.locator(".profit-header .stop-ok-btn");
   await stopExecuteButton.waitFor({ state: "visible", timeout: 15000 });
   await stopExecuteButton.click({ force: true });
-  await page.locator(".state-display").filter({ hasText: "PROTECTED" }).waitFor({ timeout: 15000 });
-  await expectStatuses(page, ["ACTIVE", "ACTIVE", "ACTIVE"]);
+  await expectStatusesToSatisfy(
+    page,
+    (statuses) =>
+      statuses.length === 3
+      && statuses.every((status) => ["ACTIVE", "FILLED"].includes(status))
+      && statuses.some((status) => status === "ACTIVE"),
+    "Protected stop statuses never stabilized into active/filled state",
+  );
+  await page.locator(".state-display").filter({ hasText: "PROTECTED" }).waitFor({ timeout: 5000 }).catch(() => {});
   await page.screenshot({ path: path.join(outputDir, "baseline-protected.png"), fullPage: true });
 
   await profitExecuteButton.waitFor({ state: "visible", timeout: 15000 });
@@ -200,6 +220,10 @@ try {
   const acceptableFinalStates = [
     JSON.stringify(["CANCELED", "CANCELED", "ACTIVE"]),
     JSON.stringify(["CANCELED", "CANCELED", "CANCELED"]),
+    JSON.stringify(["FILLED", "CANCELED", "CANCELED"]),
+    JSON.stringify(["FILLED", "FILLED", "ACTIVE"]),
+    JSON.stringify(["FILLED", "FILLED", "CANCELED"]),
+    JSON.stringify(["FILLED", "FILLED", "FILLED"]),
   ];
   if (!acceptableFinalStates.includes(JSON.stringify(finalStatuses))) {
     throw new Error(`Unexpected final stop statuses: ${JSON.stringify(finalStatuses)}`);

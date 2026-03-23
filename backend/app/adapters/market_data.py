@@ -9,6 +9,7 @@ import time
 import httpx
 
 from app.core.config import Settings
+from app.core.observability import log_event, request_log_fields
 
 MOCK_MARKET_DATA: dict[str, dict[str, float]] = {
     "AAPL": {
@@ -100,6 +101,17 @@ class AlpacaPolygonMarketDataAdapter:
         self._market_tz = ZoneInfo("America/New_York")
         self._setup_cache: dict[str, tuple[float, SetupMarketData]] = {}
 
+    def _log_event(self, event: str, level: str = "info", **fields: object) -> None:
+        log_event(
+            event,
+            level=level,
+            **request_log_fields(
+                provider="alpaca_market_data",
+                broker_mode=self.settings.broker_mode,
+                **fields,
+            ),
+        )
+
     def _data_client(self) -> httpx.Client:
         return httpx.Client(
             base_url=self.settings.alpaca_data_base_url,
@@ -122,7 +134,23 @@ class AlpacaPolygonMarketDataAdapter:
 
     def _fail_or_fallback(self, symbol: str, reason: str, message: str) -> SetupMarketData:
         if self.settings.allow_controller_mock:
+            self._log_event(
+                "market_data.setup.fallback",
+                level="warning",
+                symbol=symbol.upper(),
+                reason=reason,
+                outcome="fallback",
+                detail=message,
+            )
             return self.fallback.get_setup_data(symbol, fallback_reason=reason)
+        self._log_event(
+            "market_data.setup.failed",
+            level="error",
+            symbol=symbol.upper(),
+            reason=reason,
+            outcome="error",
+            detail=message,
+        )
         raise ValueError(message)
 
     def _parse_quote_timestamp(self, raw: str | None) -> datetime | None:
