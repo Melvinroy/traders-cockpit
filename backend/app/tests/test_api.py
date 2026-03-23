@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
 from pathlib import Path
 
@@ -34,6 +36,7 @@ from app.models.entities import (  # noqa: E402
 from app.schemas.cockpit import TrancheMode  # noqa: E402
 from app.services.auth import FAILED_LOGIN_LIMIT, get_auth_store  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
+from app.core.observability import REQUEST_ID_HEADER  # noqa: E402
 from app.api import deps_auth  # noqa: E402
 from app import main as main_module  # noqa: E402
 
@@ -114,6 +117,18 @@ def simple_entry_order(side: str = "buy", **overrides: object) -> dict[str, obje
     return payload
 
 
+def structured_events(caplog: pytest.LogCaptureFixture) -> list[dict]:
+    events: list[dict] = []
+    for record in caplog.records:
+        if record.name != "traders_cockpit":
+            continue
+        try:
+            events.append(json.loads(record.getMessage()))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
 def test_setup_endpoint_returns_contract() -> None:
     response = client.get("/api/setup/AAPL")
     assert response.status_code == 200
@@ -180,6 +195,36 @@ def test_health_ready_returns_503_when_readiness_fails(monkeypatch: pytest.Monke
 
     assert response.status_code == 503
     assert response.json()["status"] == "error"
+
+
+def test_request_id_header_is_generated_and_reused() -> None:
+    generated = client.get("/health")
+    assert generated.status_code == 200
+    generated_request_id = generated.headers.get(REQUEST_ID_HEADER)
+    assert generated_request_id
+
+    echoed = client.get("/health", headers={REQUEST_ID_HEADER: "req-health-123"})
+    assert echoed.status_code == 200
+    assert echoed.headers.get(REQUEST_ID_HEADER) == "req-health-123"
+
+
+def test_request_completion_logs_include_request_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+
+    response = client.get("/health", headers={REQUEST_ID_HEADER: "req-health-log-1"})
+
+    assert response.status_code == 200
+    events = structured_events(caplog)
+    request_event = next(
+        event for event in events if event.get("event") == "http.request.completed"
+    )
+    assert request_event["request_id"] == "req-health-log-1"
+    assert request_event["method"] == "GET"
+    assert request_event["path"] == "/health"
+    assert request_event["status"] == 200
+    assert isinstance(request_event["duration_ms"], float | int)
 
 
 def test_postgres_urls_normalize_to_psycopg_driver() -> None:
@@ -392,6 +437,24 @@ def test_login_creates_session_and_me_resolves_user() -> None:
     assert after.status_code == 401
 
 
+def test_auth_login_failure_logs_request_scoped_event(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+
+    response = client.post(
+        "/api/auth/login",
+        headers={REQUEST_ID_HEADER: "req-auth-fail-1"},
+        json={"username": "admin", "password": "wrong-password"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers.get(REQUEST_ID_HEADER) == "req-auth-fail-1"
+    events = structured_events(caplog)
+    login_failure = next(event for event in events if event.get("event") == "auth.login.failed")
+    assert login_failure["request_id"] == "req-auth-fail-1"
+    assert login_failure["username"] == "admin"
+    assert "password" not in json.dumps(login_failure)
+
+
 def test_login_rate_limits_repeated_failures() -> None:
     for _ in range(FAILED_LOGIN_LIMIT):
         failed = client.post(
@@ -467,6 +530,33 @@ def test_sensitive_routes_require_session_when_auth_is_enabled() -> None:
     finally:
         deps_auth.settings.auth_require_login = previous
         client.post("/api/auth/logout")
+
+
+def test_trade_preview_logs_request_scoped_event(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+
+    setup = client.get("/api/setup/AAPL").json()
+    response = client.post(
+        "/api/trade/preview",
+        headers={REQUEST_ID_HEADER: "req-preview-1"},
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "riskPct": 1,
+            "order": simple_entry_order(limitPrice=setup["entry"]),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get(REQUEST_ID_HEADER) == "req-preview-1"
+    events = structured_events(caplog)
+    preview_event = next(event for event in events if event.get("event") == "trade.preview")
+    assert preview_event["request_id"] == "req-preview-1"
+    assert preview_event["symbol"] == "AAPL"
+    assert preview_event["order_type"] == "limit"
+    assert preview_event["outcome"] == "success"
 
 
 def test_trade_lifecycle() -> None:
@@ -1236,6 +1326,71 @@ def test_recent_orders_merge_broker_state_and_cancel() -> None:
             assert local.status == "CANCELED"
     finally:
         service.broker.list_recent_orders = original_list_recent_orders
+        service.broker.get_order = original_get_order
+        service.broker.cancel_order = original_cancel_order
+
+
+def test_cancel_recent_order_logs_request_scoped_event(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with SessionLocal() as db:
+        db.add(
+            OrderEntity(
+                order_id="ORD-9201",
+                broker_order_id="broker-log-1",
+                symbol="AAPL",
+                type="LMT",
+                qty=10,
+                orig_qty=10,
+                price=101.25,
+                status="PENDING",
+                tranche_label="AAPL",
+                covered_tranches=[],
+                parent_id=None,
+            )
+        )
+        db.commit()
+
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    original_get_order = service.broker.get_order
+    original_cancel_order = service.broker.cancel_order
+
+    def fake_get_order(broker_order_id: str):
+        if broker_order_id != "broker-log-1":
+            return None
+        return {
+            "id": "broker-log-1",
+            "client_order_id": "client-log-1",
+            "symbol": "AAPL",
+            "side": "buy",
+            "type": "limit",
+            "qty": "10",
+            "filled_qty": "0",
+            "limit_price": "101.25",
+            "status": "accepted",
+            "created_at": "2026-03-22T10:00:00Z",
+            "updated_at": "2026-03-22T10:00:05Z",
+        }
+
+    def fake_cancel_order(_broker_order_id: str):
+        return None
+
+    service.broker.get_order = fake_get_order
+    service.broker.cancel_order = fake_cancel_order
+    try:
+        response = client.delete(
+            "/api/orders/broker-log-1",
+            headers={REQUEST_ID_HEADER: "req-cancel-1"},
+        )
+        assert response.status_code == 200
+        assert response.headers.get(REQUEST_ID_HEADER) == "req-cancel-1"
+        events = structured_events(caplog)
+        cancel_event = next(event for event in events if event.get("event") == "orders.cancel")
+        assert cancel_event["request_id"] == "req-cancel-1"
+        assert cancel_event["broker_order_id"] == "broker-log-1"
+        assert cancel_event["symbol"] == "AAPL"
+        assert cancel_event["outcome"] == "success"
+    finally:
         service.broker.get_order = original_get_order
         service.broker.cancel_order = original_cancel_order
 

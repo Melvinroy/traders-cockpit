@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.core.config import Settings
+from app.core.observability import log_event, request_log_fields
 from app.schemas.cockpit import LoginRequest, LoginResponse
 from app.services.auth import get_auth_store
 
@@ -16,7 +17,16 @@ def me(request: Request) -> LoginResponse:
     session_token = request.cookies.get(settings.auth_cookie_name)
     session = auth_store.resolve_session(session_token=session_token)
     if session is None:
+        log_event("auth.me.unauthenticated", level="warning", **request_log_fields(request))
         raise HTTPException(status_code=401, detail="Not authenticated")
+    log_event(
+        "auth.me",
+        **request_log_fields(
+            request,
+            username=str(session["user"]["username"]),
+            role=str(session["user"]["role"]),
+        ),
+    )
     return LoginResponse(
         username=str(session["user"]["username"]),
         role=str(session["user"]["role"]),
@@ -32,6 +42,15 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
         ip_addr=ip_addr,
     )
     if not is_allowed:
+        log_event(
+            "auth.login.blocked",
+            level="warning",
+            **request_log_fields(
+                request,
+                username=payload.username,
+                retry_after_seconds=retry_after,
+            ),
+        )
         raise HTTPException(
             status_code=429,
             detail=f"Too many login attempts. Try again in {retry_after} seconds.",
@@ -44,10 +63,24 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
             ip_addr=ip_addr,
         )
         if not is_allowed:
+            log_event(
+                "auth.login.blocked",
+                level="warning",
+                **request_log_fields(
+                    request,
+                    username=payload.username,
+                    retry_after_seconds=retry_after,
+                ),
+            )
             raise HTTPException(
                 status_code=429,
                 detail=f"Too many login attempts. Try again in {retry_after} seconds.",
             )
+        log_event(
+            "auth.login.failed",
+            level="warning",
+            **request_log_fields(request, username=payload.username),
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
     auth_store.clear_login_failures(username=payload.username, ip_addr=ip_addr)
     session_token, session_data = auth_store.create_session(
@@ -62,6 +95,10 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
         samesite=settings.auth_cookie_samesite,
         secure=settings.auth_cookie_secure,
     )
+    log_event(
+        "auth.login.succeeded",
+        **request_log_fields(request, username=user.username, role=user.role),
+    )
     return LoginResponse(
         username=user.username,
         role=user.role,
@@ -71,11 +108,21 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
 
 @router.post("/logout")
 def logout(request: Request, response: Response) -> dict[str, bool]:
+    session = auth_store.resolve_session(
+        session_token=request.cookies.get(settings.auth_cookie_name)
+    )
     auth_store.revoke_session(session_token=request.cookies.get(settings.auth_cookie_name))
     response.delete_cookie(
         settings.auth_cookie_name,
         httponly=True,
         samesite=settings.auth_cookie_samesite,
         secure=settings.auth_cookie_secure,
+    )
+    log_event(
+        "auth.logout",
+        **request_log_fields(
+            request,
+            username=str(session["user"]["username"]) if session is not None else None,
+        ),
     )
     return {"ok": True}
