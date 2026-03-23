@@ -34,6 +34,7 @@ from app.schemas.cockpit import TrancheMode  # noqa: E402
 from app.services.auth import FAILED_LOGIN_LIMIT, get_auth_store  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
 from app.api import deps_auth  # noqa: E402
+from app import main as main_module  # noqa: E402
 
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
@@ -117,6 +118,50 @@ def test_setup_endpoint_returns_contract() -> None:
     if data["stopReferenceDefault"] != "manual":
         assert data["entry"] > data["finalStop"]
         assert data["shares"] >= 0
+
+
+def test_health_live_returns_liveness_contract() -> None:
+    response = client.get("/health/live")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["kind"] == "live"
+    assert "broker_mode" in payload
+
+
+def test_health_ready_returns_readiness_contract() -> None:
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["kind"] == "ready"
+    assert payload["runtime_contract"]["status"] == "ok"
+    assert "dependencies" in payload
+
+
+def test_health_ready_returns_503_when_readiness_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        main_module,
+        "build_readiness_report",
+        lambda settings: {
+            "status": "error",
+            "kind": "ready",
+            "app_env": settings.app_env,
+            "broker_mode": settings.broker_mode,
+            "runtime_contract": {
+                "status": "error",
+                "issues": ["forced readiness failure"],
+            },
+            "dependencies": {"auth": {"status": "error", "detail": "forced"}},
+        },
+    )
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "error"
 
 
 def test_postgres_urls_normalize_to_psycopg_driver() -> None:

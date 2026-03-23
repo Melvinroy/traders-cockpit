@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app.core.config import Settings
-from app.core.startup_preflight import ensure_auth_db_path, validate_runtime_contract
+from app.core.startup_preflight import (
+    build_dependency_report,
+    build_readiness_report,
+    ensure_auth_db_path,
+    validate_runtime_contract,
+)
 
 
 def make_settings(**overrides: object) -> Settings:
@@ -81,3 +88,34 @@ def test_ensure_auth_db_path_creates_parent_directory(tmp_path: Path) -> None:
     assert resolved == target
     assert target.parent.is_dir()
     assert target.exists()
+
+
+def test_build_readiness_report_marks_local_settings_ready(tmp_path: Path) -> None:
+    settings = make_settings(auth_db_path=str(tmp_path / "auth.db"))
+
+    report = build_readiness_report(settings)
+
+    assert report["status"] == "ok"
+    assert report["kind"] == "ready"
+    assert report["runtime_contract"]["status"] == "ok"
+    assert report["dependencies"]["auth"]["status"] == "ok"
+
+
+def test_build_dependency_report_includes_hosted_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(app_env="staging")
+    monkeypatch.setattr(
+        "app.core.startup_preflight.check_database",
+        lambda database_url: None,
+    )
+    monkeypatch.setattr(
+        "app.core.startup_preflight.check_redis",
+        lambda redis_url: "redis unavailable",
+    )
+
+    report = build_dependency_report(settings)
+
+    assert report["database"]["status"] == "ok"
+    assert report["redis"]["status"] == "error"
+    assert report["redis"]["detail"] == "redis unavailable"

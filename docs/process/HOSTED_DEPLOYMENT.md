@@ -33,6 +33,10 @@ Startup behavior:
 
 - runs `alembic upgrade head`
 - starts `uvicorn`
+- exposes:
+  - `/health/live` for liveness
+  - `/health/ready` for readiness
+  - `/health/deps` for dependency detail
 
 Required backend envs:
 
@@ -144,7 +148,7 @@ The follow-up production tranche should migrate hosted auth persistence to Postg
 ## Promotion Path
 
 1. Deploy backend staging.
-2. Confirm `/health` works.
+2. Confirm `/health/live` and `/health/ready` both work.
 3. Configure frontend public envs.
 4. Deploy frontend preview/staging.
 5. Run browser smoke against hosted URLs.

@@ -457,6 +457,12 @@ For local validation of the hosted smoke wrapper, add explicit auth overrides:
 
 More deployment detail lives in [docs/process/HOSTED_DEPLOYMENT.md](docs/process/HOSTED_DEPLOYMENT.md).
 
+Backend health strategy for hosted deployments:
+
+- `GET /health/live`: process liveness
+- `GET /health/ready`: readiness including runtime contract and hosted dependency checks
+- `GET /health/deps`: structured dependency detail for auth storage, Postgres, and Redis
+
 ## Roadmap
 
 - Broker reconciliation against Alpaca paper fills.
