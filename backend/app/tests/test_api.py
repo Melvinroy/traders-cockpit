@@ -31,7 +31,7 @@ from app.models.entities import (  # noqa: E402
     TradeLogEntity,
 )
 from app.schemas.cockpit import TrancheMode  # noqa: E402
-from app.services.auth import get_auth_store  # noqa: E402
+from app.services.auth import FAILED_LOGIN_LIMIT, get_auth_store  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
 from app.api import deps_auth  # noqa: E402
 
@@ -327,6 +327,43 @@ def test_login_creates_session_and_me_resolves_user() -> None:
 
     after = client.get("/api/auth/me")
     assert after.status_code == 401
+
+
+def test_login_rate_limits_repeated_failures() -> None:
+    for _ in range(FAILED_LOGIN_LIMIT):
+        failed = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "wrong-password"}
+        )
+        assert failed.status_code == 401
+
+    blocked = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "wrong-password"}
+    )
+    assert blocked.status_code == 429
+    assert "Too many login attempts" in blocked.json()["detail"]
+
+    success = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "change-me-admin"}
+    )
+    assert success.status_code == 429
+
+
+def test_successful_login_before_limit_clears_failures() -> None:
+    for _ in range(FAILED_LOGIN_LIMIT - 1):
+        failed = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "wrong-password"}
+        )
+        assert failed.status_code == 401
+
+    success = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "change-me-admin"}
+    )
+    assert success.status_code == 200
+
+    follow_up_failure = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "wrong-password"}
+    )
+    assert follow_up_failure.status_code == 401
 
 
 def test_staging_cookie_settings_can_support_hosted_preview() -> None:

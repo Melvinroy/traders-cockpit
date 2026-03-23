@@ -12,6 +12,9 @@ from typing import Any
 
 from app.core.config import Settings
 
+FAILED_LOGIN_WINDOW_MINUTES = 15
+FAILED_LOGIN_LIMIT = 5
+
 
 @dataclass
 class AuthUser:
@@ -69,6 +72,17 @@ class AuthStore:
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active
                 ON auth_sessions(user_id, revoked_at, expires_at)
                 """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS auth_login_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    subject_key TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL
+                )
+                """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_auth_login_attempts_subject_time
+                ON auth_login_attempts(subject_key, occurred_at)
+                """)
             conn.commit()
 
     @staticmethod
@@ -92,6 +106,95 @@ class AuthStore:
     @staticmethod
     def _session_token_hash(token: str) -> str:
         return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+
+    def _login_subjects(self, *, username: str, ip_addr: str | None) -> list[str]:
+        subjects: list[str] = []
+        clean_username = self._normalize_username(username)
+        clean_ip = str(ip_addr or "").strip()
+        if clean_username:
+            subjects.append(f"user:{clean_username}")
+        if clean_ip:
+            subjects.append(f"ip:{clean_ip}")
+        return subjects
+
+    def _recent_attempt_rows(
+        self, *, conn: sqlite3.Connection, subject_key: str, window_started_at: str
+    ) -> list[sqlite3.Row]:
+        return conn.execute(
+            """
+            SELECT occurred_at
+            FROM auth_login_attempts
+            WHERE subject_key = ?
+              AND occurred_at >= ?
+            ORDER BY occurred_at ASC
+            """,
+            (subject_key, window_started_at),
+        ).fetchall()
+
+    def _cleanup_expired_login_attempts(
+        self, *, conn: sqlite3.Connection, window_started_at: str
+    ) -> None:
+        conn.execute(
+            "DELETE FROM auth_login_attempts WHERE occurred_at < ?",
+            (window_started_at,),
+        )
+
+    def check_login_allowed(self, *, username: str, ip_addr: str | None) -> tuple[bool, int | None]:
+        now = datetime.now(UTC)
+        window_started_at = (now - timedelta(minutes=FAILED_LOGIN_WINDOW_MINUTES)).isoformat()
+        retry_after_seconds: int | None = None
+        with self._connect() as conn:
+            self._cleanup_expired_login_attempts(
+                conn=conn,
+                window_started_at=window_started_at,
+            )
+            conn.commit()
+            for subject_key in self._login_subjects(username=username, ip_addr=ip_addr):
+                rows = self._recent_attempt_rows(
+                    conn=conn,
+                    subject_key=subject_key,
+                    window_started_at=window_started_at,
+                )
+                if len(rows) <= FAILED_LOGIN_LIMIT:
+                    continue
+                oldest = datetime.fromisoformat(str(rows[0]["occurred_at"]).replace("Z", "+00:00"))
+                if oldest.tzinfo is None:
+                    oldest = oldest.replace(tzinfo=UTC)
+                expires_at = oldest + timedelta(minutes=FAILED_LOGIN_WINDOW_MINUTES)
+                retry_after_seconds = max(1, int((expires_at - now).total_seconds()))
+                break
+        return retry_after_seconds is None, retry_after_seconds
+
+    def record_login_failure(
+        self, *, username: str, ip_addr: str | None
+    ) -> tuple[bool, int | None]:
+        now_iso = self._now_iso()
+        subjects = self._login_subjects(username=username, ip_addr=ip_addr)
+        if not subjects:
+            return True, None
+        with self._connect() as conn:
+            for subject_key in subjects:
+                conn.execute(
+                    """
+                    INSERT INTO auth_login_attempts (subject_key, occurred_at)
+                    VALUES (?, ?)
+                    """,
+                    (subject_key, now_iso),
+                )
+            conn.commit()
+        return self.check_login_allowed(username=username, ip_addr=ip_addr)
+
+    def clear_login_failures(self, *, username: str, ip_addr: str | None) -> None:
+        subjects = self._login_subjects(username=username, ip_addr=ip_addr)
+        if not subjects:
+            return
+        placeholders = ",".join("?" for _ in subjects)
+        with self._connect() as conn:
+            conn.execute(
+                f"DELETE FROM auth_login_attempts WHERE subject_key IN ({placeholders})",
+                tuple(subjects),
+            )
+            conn.commit()
 
     def ensure_user(self, *, username: str, password: str, role: str) -> None:
         clean_username = self._normalize_username(username)
@@ -287,6 +390,7 @@ class AuthStore:
 
     def reset_for_tests(self) -> None:
         with self._connect() as conn:
+            conn.execute("DELETE FROM auth_login_attempts")
             conn.execute("DELETE FROM auth_sessions")
             conn.execute("DELETE FROM auth_users")
             conn.commit()
@@ -300,7 +404,8 @@ def get_auth_store(settings: Settings) -> AuthStore:
     store = _auth_store_cache.get(cache_key)
     if store is None:
         store = AuthStore(
-            db_path=settings.auth_db_path, session_ttl_hours=settings.auth_session_ttl_hours
+            db_path=settings.auth_db_path,
+            session_ttl_hours=settings.auth_session_ttl_hours,
         )
         _auth_store_cache[cache_key] = store
     return store

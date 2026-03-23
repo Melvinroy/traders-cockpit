@@ -446,6 +446,7 @@ Canonical process docs:
 - [docs/process/BRANCH_PROTECTION.md](docs/process/BRANCH_PROTECTION.md)
 - [docs/process/RELEASE_PROMOTION_CHECKLIST.md](docs/process/RELEASE_PROMOTION_CHECKLIST.md)
 - [docs/process/STAGING_RELEASE_PLAYBOOK.md](docs/process/STAGING_RELEASE_PLAYBOOK.md)
+- [docs/process/SECRET_ROTATION_RUNBOOK.md](docs/process/SECRET_ROTATION_RUNBOOK.md)
 
 ## License
 
