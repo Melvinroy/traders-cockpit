@@ -14,6 +14,7 @@ if auth_db_path.exists():
     auth_db_path.unlink()
 
 os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+os.environ["AUTH_STORAGE_MODE"] = "file"
 os.environ["AUTH_DB_PATH"] = str(auth_db_path)
 os.environ["AUTH_REQUIRE_LOGIN"] = "false"
 

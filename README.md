@@ -232,7 +232,7 @@ User Browser
 | Database | PostgreSQL 16, with SQLite fallback available when explicitly enabled |
 | Realtime | WebSocket with Redis pub/sub fanout and single-process fallback |
 | Broker | `paper`, `alpaca_paper`, `alpaca_live` |
-| Auth | Cookie-based session auth backed by `AUTH_DB_PATH` |
+| Auth | Cookie-based session auth backed by `AUTH_STORAGE_MODE` (`file` locally, `database` hosted) |
 | Infra | Docker Compose locally, Render blueprint for hosted backend |
 
 Key backend layers:
@@ -307,7 +307,8 @@ Copy `.env.example` to `.env` for deterministic local development. Use `.env.pro
 | `AUTH_COOKIE_NAME` | `traders_cockpit_session` | Session cookie name. |
 | `AUTH_COOKIE_SAMESITE` | `lax` | Use `none` for cross-origin hosted deployments. |
 | `AUTH_COOKIE_SECURE` | `false` | Set `true` for TLS-backed staging or production. |
-| `AUTH_DB_PATH` | `./data/auth.db` | Local auth/session store path. |
+| `AUTH_STORAGE_MODE` | `file` | Auth persistence backend. Use `database` for hosted staging/production. |
+| `AUTH_DB_PATH` | `./data/auth.db` | Local auth/session store path when `AUTH_STORAGE_MODE=file`. |
 | `AUTH_SEED_USERS` | `true` | Seeds local admin and trader users. |
 | `AUTH_ADMIN_USERNAME` | `admin` | Admin login name. |
 | `AUTH_ADMIN_PASSWORD` | `change-me-admin` | Placeholder admin password; override immediately. |
@@ -425,8 +426,8 @@ For hosted cross-origin deployments:
 ```env
 AUTH_COOKIE_SAMESITE=none
 AUTH_COOKIE_SECURE=true
+AUTH_STORAGE_MODE=database
 CORS_ORIGINS=https://your-frontend.vercel.app
-AUTH_DB_PATH=/var/lib/traders-cockpit/auth/auth.db
 ```
 
 Validate hosted envs before deploy:

@@ -61,6 +61,7 @@ class Settings:
     auth_cookie_name: str
     auth_cookie_samesite: str
     auth_cookie_secure: bool
+    auth_storage_mode: str
     auth_db_path: str
     auth_seed_users: bool
     auth_admin_username: str
@@ -119,7 +120,13 @@ class Settings:
             "SQLITE_FALLBACK_URL", "sqlite:///./data/traders_cockpit.db"
         ).strip()
         allow_sqlite_fallback = _as_bool(os.getenv("ALLOW_SQLITE_FALLBACK", "false"))
-        auth_db_path = os.getenv("AUTH_DB_PATH", "./data/auth.db").strip() or "./data/auth.db"
+        auth_storage_default = "database" if app_env in {"staging", "production"} else "file"
+        auth_storage_raw = os.getenv("AUTH_STORAGE_MODE", auth_storage_default).strip().lower()
+        auth_storage_mode = (
+            auth_storage_raw if auth_storage_raw in {"file", "database"} else auth_storage_default
+        )
+        auth_db_path_raw = os.getenv("AUTH_DB_PATH", "").strip()
+        auth_db_path = auth_db_path_raw or ("./data/auth.db" if auth_storage_mode == "file" else "")
         auth_cookie_secure_default = "true" if app_env in {"staging", "production"} else "false"
         auth_cookie_samesite_default = "none" if app_env in {"staging", "production"} else "lax"
         auth_cookie_samesite_raw = (
@@ -147,6 +154,7 @@ class Settings:
             auth_cookie_secure=_as_bool(
                 os.getenv("AUTH_COOKIE_SECURE", auth_cookie_secure_default)
             ),
+            auth_storage_mode=auth_storage_mode,
             auth_db_path=auth_db_path,
             auth_seed_users=_as_bool(os.getenv("AUTH_SEED_USERS", "true"), True),
             auth_admin_username=os.getenv("AUTH_ADMIN_USERNAME", "admin").strip(),
@@ -206,6 +214,14 @@ class Settings:
     @property
     def uses_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def uses_database_auth_storage(self) -> bool:
+        return self.auth_storage_mode == "database"
+
+    @property
+    def uses_file_auth_storage(self) -> bool:
+        return not self.uses_database_auth_storage
 
     @property
     def uses_alpaca_broker(self) -> bool:

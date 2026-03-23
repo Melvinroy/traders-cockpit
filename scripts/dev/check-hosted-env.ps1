@@ -19,7 +19,7 @@ $required = @(
   "AUTH_REQUIRE_LOGIN",
   "AUTH_COOKIE_SAMESITE",
   "AUTH_COOKIE_SECURE",
-  "AUTH_DB_PATH",
+  "AUTH_STORAGE_MODE",
   "ALLOW_SQLITE_FALLBACK",
   "AUTH_ADMIN_USERNAME",
   "AUTH_ADMIN_PASSWORD",
@@ -101,8 +101,9 @@ if ($envMap["DATABASE_URL"].Trim().ToLowerInvariant().StartsWith("sqlite")) {
   throw "DATABASE_URL cannot use sqlite for hosted deployment."
 }
 
-if ([string]::IsNullOrWhiteSpace($envMap["AUTH_DB_PATH"])) {
-  throw "AUTH_DB_PATH must be set for hosted deployment."
+$authStorageMode = $envMap["AUTH_STORAGE_MODE"].Trim().ToLowerInvariant()
+if ($authStorageMode -ne "database") {
+  throw "AUTH_STORAGE_MODE must be database for hosted deployment."
 }
 
 if ($envMap.ContainsKey("ALLOW_LIVE_TRADING") -and (Read-BoolValue -Value $envMap["ALLOW_LIVE_TRADING"] -Default $false)) {

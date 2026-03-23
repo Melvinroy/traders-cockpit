@@ -17,6 +17,8 @@ def validate_runtime_contract(settings: Settings) -> list[str]:
 
     if settings.allow_sqlite_fallback or settings.uses_sqlite:
         issues.append("Hosted startup requires PostgreSQL; SQLite fallback must stay disabled.")
+    if not settings.uses_database_auth_storage:
+        issues.append("Hosted startup requires AUTH_STORAGE_MODE=database.")
     if not settings.auth_require_login:
         issues.append("Hosted startup requires AUTH_REQUIRE_LOGIN=true.")
     if not settings.auth_cookie_secure:
@@ -82,20 +84,33 @@ def build_liveness_report(settings: Settings) -> dict[str, object]:
 
 
 def build_dependency_report(settings: Settings) -> dict[str, dict[str, str]]:
-    auth_issue = check_auth_path(settings.auth_db_path)
-    dependencies: dict[str, dict[str, str]] = {
-        "auth": {"status": "ok" if auth_issue is None else "error"},
-    }
+    dependencies: dict[str, dict[str, str]] = {}
+    db_issue: str | None = None
+
+    if settings.app_env in HOSTED_ENVS or settings.uses_database_auth_storage:
+        db_issue = check_database(settings.database_url)
+        dependencies["database"] = {"status": "ok" if db_issue is None else "error"}
+        if db_issue is not None:
+            dependencies["database"]["detail"] = db_issue
+
+    if settings.uses_database_auth_storage:
+        auth_issue = None if db_issue is None else f"database-backed auth unavailable: {db_issue}"
+        dependencies["auth"] = {
+            "status": "ok" if auth_issue is None else "error",
+            "mode": "database",
+        }
+    else:
+        auth_issue = check_auth_path(settings.auth_db_path)
+        dependencies["auth"] = {
+            "status": "ok" if auth_issue is None else "error",
+            "mode": "file",
+        }
     if auth_issue is not None:
         dependencies["auth"]["detail"] = auth_issue
 
     if settings.app_env in HOSTED_ENVS:
-        db_issue = check_database(settings.database_url)
         redis_issue = check_redis(settings.redis_url)
-        dependencies["database"] = {"status": "ok" if db_issue is None else "error"}
         dependencies["redis"] = {"status": "ok" if redis_issue is None else "error"}
-        if db_issue is not None:
-            dependencies["database"]["detail"] = db_issue
         if redis_issue is not None:
             dependencies["redis"]["detail"] = redis_issue
 
