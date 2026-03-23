@@ -14,6 +14,7 @@ import { SetupPanel } from "@/components/SetupPanel";
 import { StopProtectionPanel } from "@/components/StopProtectionPanel";
 import { ApiError, api } from "@/lib/api";
 import { defaultAllocationPcts, defaultStopPcts, entryDirection, normalizeAllocationPcts, normalizeStopPcts } from "@/lib/cockpit-ui";
+import { evaluateEntryOrderRules } from "@/lib/entry-order-rules";
 import type { AccountView, AuthUser, EntryOrderDraft, EntrySide, LogEntry, OffHoursMode, OrderView, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
 
 const DEFAULT_STOP_MODES: StopMode[] = [
@@ -312,6 +313,19 @@ export function Cockpit() {
     }),
     [effectiveEntryOrder]
   );
+  const entryOrderIssues = useMemo(
+    () =>
+      evaluateEntryOrderRules({
+        order: effectiveEntryOrder,
+        sessionState: effectiveSetup?.sessionState ?? setup?.sessionState ?? "closed",
+        executionProvider: effectiveSetup?.executionProvider ?? setup?.executionProvider ?? "paper",
+      }),
+    [effectiveEntryOrder, effectiveSetup?.executionProvider, effectiveSetup?.sessionState, setup?.executionProvider, setup?.sessionState]
+  );
+  const entryOrderErrors = useMemo(
+    () => entryOrderIssues.filter((issue) => issue.severity === "error"),
+    [entryOrderIssues]
+  );
   const phase = activePosition?.phase ?? (setup ? "setup_loaded" : "idle");
   const livePrice = activePosition?.livePrice ?? effectiveSetup?.last ?? null;
   const delta = livePrice !== null && effectiveSetup ? livePrice - effectiveSetup.entry : 0;
@@ -319,15 +333,12 @@ export function Cockpit() {
   const normalizedTicker = ticker.trim().toUpperCase();
   const tickerMatchesActiveSetup = normalizedTicker.length > 0 && normalizedTicker === activeLoadedTicker;
   const actionTickerMismatch = Boolean(setup) && normalizedTicker.length > 0 && !tickerMatchesActiveSetup;
-  const orderConfigDisabledReason = effectiveEntryOrder.orderClass === "oco"
-    ? "OCO is exit-only at Alpaca and cannot be used for a new entry."
-    : null;
-  const actionsDisabled = !effectiveSetup || setupLoadPending || actionTickerMismatch || Boolean(orderConfigDisabledReason);
+  const actionsDisabled = !effectiveSetup || setupLoadPending || actionTickerMismatch || entryOrderErrors.length > 0;
   const disabledReason = setupLoadPending
     ? `Resolving ${normalizedTicker || activeLoadedTicker || "ticker"}...`
     : actionTickerMismatch
       ? `Wait for ${normalizedTicker} to finish loading before previewing or entering a trade.`
-      : orderConfigDisabledReason ?? effectiveSetup?.sizingWarning ?? null;
+      : null;
   const activeEntrySide = activePosition?.setup?.entryOrder?.side === "sell" ? "sell" : effectiveEntryOrder.side;
   const leftColumnCollapsed = panelCollapse.stopProtection && panelCollapse.profitTaking;
   const rightColumnCollapsed = panelCollapse.recentOrders && panelCollapse.runningPnl;
@@ -1139,6 +1150,7 @@ export function Cockpit() {
             manualStop={manualStop}
             displayStopPrice={protectiveStopPrice || null}
             order={effectiveEntryOrder}
+            orderIssues={entryOrderIssues}
             attachedSummary={attachedSummary}
             actionsDisabled={actionsDisabled}
             disabledReason={disabledReason}

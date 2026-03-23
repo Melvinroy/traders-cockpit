@@ -955,6 +955,14 @@ select {
   gap: 4px;
 }
 
+.entry-order-field-invalid .entry-order-input,
+.entry-order-field-invalid .entry-select,
+.entry-order-field-invalid .stop-ref-cycle,
+.entry-order-field-invalid .entry-side-toggle {
+  border-color: rgba(255, 91, 123, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 91, 123, 0.18);
+}
+
 .entry-side-toggle {
   display: inline-flex;
   min-height: 30px;
@@ -1054,6 +1062,14 @@ select {
   color: var(--text1);
   font-size: 10px;
   line-height: 1.5;
+}
+
+.entry-rule-error {
+  color: var(--red);
+}
+
+.entry-rule-note {
+  color: var(--amber);
 }
 
 .offhours-toggle-group {
