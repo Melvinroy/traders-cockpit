@@ -5,9 +5,9 @@ import os
 import subprocess
 from pathlib import Path
 
+import psycopg
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect, text
 
 REQUIRED_TABLES = {
     "account_settings",
@@ -39,22 +39,22 @@ def main() -> int:
     alembic_config.set_main_option("script_location", str(backend_dir / "alembic"))
     expected_head = ScriptDirectory.from_config(alembic_config).get_current_head()
 
-    engine = create_engine(database_url)
-    try:
-        inspector = inspect(engine)
-        actual_tables = set(inspector.get_table_names())
-        missing_tables = sorted(REQUIRED_TABLES - actual_tables)
-        if missing_tables:
-            raise RuntimeError(
-                f"Migration smoke missing required tables: {', '.join(missing_tables)}"
-            )
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                select table_name
+                from information_schema.tables
+                where table_schema = 'public'
+                """)
+            actual_tables = {row[0] for row in cursor.fetchall()}
+            missing_tables = sorted(REQUIRED_TABLES - actual_tables)
+            if missing_tables:
+                raise RuntimeError(
+                    f"Migration smoke missing required tables: {', '.join(missing_tables)}"
+                )
 
-        with engine.connect() as connection:
-            actual_head = connection.execute(
-                text("select version_num from alembic_version")
-            ).scalar_one()
-    finally:
-        engine.dispose()
+            cursor.execute("select version_num from alembic_version")
+            actual_head = cursor.fetchone()[0]
 
     if actual_head != expected_head:
         raise RuntimeError(
