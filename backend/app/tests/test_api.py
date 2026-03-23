@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 from sqlalchemy import select
+from starlette.websockets import WebSocketDisconnect
 
 db_path = Path(__file__).resolve().parent / "test.db"
 if db_path.exists():
@@ -230,6 +231,28 @@ def test_request_completion_logs_include_request_context(
     assert request_event["path"] == "/health"
     assert request_event["status"] == 200
     assert isinstance(request_event["duration_ms"], float | int)
+
+
+def test_websocket_auth_failure_logs_request_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    previous = deps_auth.settings.auth_require_login
+    deps_auth.settings.auth_require_login = True
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    try:
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(
+                "/ws/cockpit?request_id=req-ws-auth-fail&client_session_id=ws-client-auth-fail"
+            ) as websocket:
+                websocket.receive_text()
+    finally:
+        deps_auth.settings.auth_require_login = previous
+
+    events = structured_events(caplog)
+    auth_event = next(event for event in events if event.get("event") == "ws.auth.failed")
+    assert auth_event["request_id"] == "req-ws-auth-fail"
+    assert auth_event["client_session_id"] == "ws-client-auth-fail"
+    assert auth_event["path"] == "/ws/cockpit"
 
 
 def test_postgres_urls_normalize_to_psycopg_driver() -> None:
@@ -685,6 +708,75 @@ def test_trade_preview_logs_request_scoped_event(caplog: pytest.LogCaptureFixtur
     assert preview_event["symbol"] == "AAPL"
     assert preview_event["order_type"] == "limit"
     assert preview_event["outcome"] == "success"
+
+
+def test_websocket_subscribe_logs_lifecycle_and_propagates_request_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+            "order": simple_entry_order(orderType="market"),
+        },
+    )
+    assert enter.status_code == 200
+
+    with client.websocket_connect(
+        "/ws/cockpit?request_id=req-ws-connect-1&client_session_id=ws-client-1"
+    ) as websocket:
+        websocket.send_text(
+            json.dumps(
+                {
+                    "action": "subscribe_price",
+                    "symbol": "AAPL",
+                    "requestId": "req-ws-message-1",
+                    "clientSessionId": "ws-client-1",
+                }
+            )
+        )
+        payload = json.loads(websocket.receive_text())
+
+    assert payload["type"] == "price_update"
+    assert payload["symbol"] == "AAPL"
+    assert payload["requestId"] == "req-ws-message-1"
+
+    events = structured_events(caplog)
+    connect_event = next(event for event in events if event.get("event") == "ws.connect")
+    message_event = next(event for event in events if event.get("event") == "ws.message.received")
+    broadcast_event = next(
+        event
+        for event in events
+        if event.get("event") == "ws.broadcast"
+        and event.get("event_type") == "price_update"
+        and event.get("request_id") == "req-ws-message-1"
+    )
+    disconnect_event = next(event for event in events if event.get("event") == "ws.disconnect")
+
+    assert connect_event["request_id"] == "req-ws-connect-1"
+    assert connect_event["client_session_id"] == "ws-client-1"
+    assert connect_event["channel"] == "cockpit"
+    assert message_event["request_id"] == "req-ws-message-1"
+    assert message_event["client_session_id"] == "ws-client-1"
+    assert message_event["action"] == "subscribe_price"
+    assert message_event["symbol"] == "AAPL"
+    assert broadcast_event["request_id"] == "req-ws-message-1"
+    assert broadcast_event["client_session_id"] == "ws-client-1"
+    assert broadcast_event["event_type"] == "price_update"
+    assert broadcast_event["symbol"] == "AAPL"
+    assert disconnect_event["request_id"] == "req-ws-connect-1"
+    assert disconnect_event["client_session_id"] == "ws-client-1"
 
 
 def test_trade_lifecycle() -> None:

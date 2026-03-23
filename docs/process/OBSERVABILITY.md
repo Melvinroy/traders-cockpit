@@ -68,6 +68,13 @@ This app uses a simple request-scoped observability contract for API troubleshoo
 - `broker.session.lookup.failed`
 - `broker.account.lookup.fallback`
 - `broker.account.lookup.failed`
+- `ws.auth.failed`
+- `ws.connect`
+- `ws.message.received`
+- `ws.broadcast`
+- `ws.disconnect`
+- `ws.send.failed`
+- `ws.redis.publish.failed`
 
 ## Logging safety rules
 
@@ -85,4 +92,12 @@ This app uses a simple request-scoped observability contract for API troubleshoo
    - cancel issue -> `orders.cancel`
    - broker submission/lookup/cancel issue -> `broker.*`
    - setup quote or fallback issue -> `market_data.*`
+   - websocket connect/subscribe/publish issue -> `ws.*`
 4. If the request never reached the app, check reverse-proxy or platform logs for the same request id if they propagate it.
+
+## Websocket correlation
+
+- The cockpit websocket now sends a stable `client_session_id` on connect and on outbound subscription messages.
+- Websocket subscription messages also send a per-message `requestId`.
+- Server-side websocket logs and websocket-triggered broker/service logs inherit that `requestId` and `client_session_id` where applicable.
+- Server-originated websocket event payloads may include `requestId` so browser-side support captures can be correlated back to backend logs.

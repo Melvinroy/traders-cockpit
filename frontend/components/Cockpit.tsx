@@ -86,6 +86,13 @@ const DEFAULT_LAYOUT_STATE: LayoutState = {
   rightRailTopPct: 46,
 };
 
+function createClientId(prefix: string): string {
+  const value = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${value}`;
+}
+
 function readStoredJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -267,6 +274,8 @@ export function Cockpit() {
   const setupRequestSeqRef = useRef(0);
   const setupAbortRef = useRef<AbortController | null>(null);
   const wsHasOpenedRef = useRef(false);
+  const wsClientSessionIdRef = useRef(createClientId("ws"));
+  const wsMessageSeqRef = useRef(0);
   const activeSymbolRef = useRef("");
   const setupLoadedRef = useRef(false);
   const stopModeRef = useRef(3);
@@ -446,7 +455,15 @@ export function Cockpit() {
 
   const subscribePrice = useCallback((symbol: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ action: "subscribe_price", symbol }));
+      wsMessageSeqRef.current += 1;
+      wsRef.current.send(
+        JSON.stringify({
+          action: "subscribe_price",
+          symbol,
+          requestId: `${wsClientSessionIdRef.current}-${wsMessageSeqRef.current}`,
+          clientSessionId: wsClientSessionIdRef.current,
+        })
+      );
     }
   }, []);
 
@@ -604,13 +621,25 @@ export function Cockpit() {
 
     const connect = () => {
       if (disposed) return;
-      const ws = new WebSocket(wsUrl);
+      const connectUrl = new URL(wsUrl);
+      connectUrl.searchParams.set("client_session_id", wsClientSessionIdRef.current);
+      wsMessageSeqRef.current += 1;
+      connectUrl.searchParams.set("request_id", `${wsClientSessionIdRef.current}-${wsMessageSeqRef.current}`);
+      const ws = new WebSocket(connectUrl.toString());
       wsRef.current = ws;
       ws.onopen = () => {
         reconnectDelay = 1000;
         setRuntimeError(null);
         if (activeSymbolRef.current) {
-          ws.send(JSON.stringify({ action: "subscribe_price", symbol: activeSymbolRef.current }));
+          wsMessageSeqRef.current += 1;
+          ws.send(
+            JSON.stringify({
+              action: "subscribe_price",
+              symbol: activeSymbolRef.current,
+              requestId: `${wsClientSessionIdRef.current}-${wsMessageSeqRef.current}`,
+              clientSessionId: wsClientSessionIdRef.current,
+            })
+          );
         }
         if (wsHasOpenedRef.current) {
           void hydrate({ autoSelectFirst: Boolean(activeSymbolRef.current) });
