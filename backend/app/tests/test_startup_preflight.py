@@ -24,6 +24,7 @@ def make_settings(**overrides: object) -> Settings:
         "auth_cookie_name": "traders_cockpit_session",
         "auth_cookie_samesite": "lax",
         "auth_cookie_secure": False,
+        "auth_storage_mode": "file",
         "auth_db_path": "./data/auth.db",
         "auth_seed_users": True,
         "auth_admin_username": "admin",
@@ -68,6 +69,7 @@ def test_validate_runtime_contract_allows_local_defaults() -> None:
 def test_validate_runtime_contract_rejects_hosted_sqlite_and_insecure_auth() -> None:
     settings = make_settings(
         app_env="production",
+        auth_storage_mode="database",
         allow_sqlite_fallback=True,
         database_url="sqlite:///./data/traders_cockpit.db",
         auth_cookie_secure=False,
@@ -78,6 +80,19 @@ def test_validate_runtime_contract_rejects_hosted_sqlite_and_insecure_auth() -> 
     assert any("SQLite" in issue for issue in issues)
     assert any("AUTH_COOKIE_SECURE=true" in issue for issue in issues)
     assert any("OPS_REQUIRE_AUTH=true" in issue for issue in issues)
+
+
+def test_validate_runtime_contract_rejects_hosted_file_auth() -> None:
+    settings = make_settings(
+        app_env="staging",
+        auth_storage_mode="file",
+        auth_cookie_secure=True,
+        require_ops_auth=True,
+    )
+
+    issues = validate_runtime_contract(settings)
+
+    assert any("AUTH_STORAGE_MODE=database" in issue for issue in issues)
 
 
 def test_ensure_auth_db_path_creates_parent_directory(tmp_path: Path) -> None:
@@ -104,7 +119,7 @@ def test_build_readiness_report_marks_local_settings_ready(tmp_path: Path) -> No
 def test_build_dependency_report_includes_hosted_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = make_settings(app_env="staging")
+    settings = make_settings(app_env="staging", auth_storage_mode="database")
     monkeypatch.setattr(
         "app.core.startup_preflight.check_database",
         lambda database_url: None,
@@ -119,3 +134,21 @@ def test_build_dependency_report_includes_hosted_dependencies(
     assert report["database"]["status"] == "ok"
     assert report["redis"]["status"] == "error"
     assert report["redis"]["detail"] == "redis unavailable"
+    assert report["auth"]["status"] == "ok"
+    assert report["auth"]["mode"] == "database"
+
+
+def test_build_dependency_report_uses_file_auth_for_local_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = make_settings(auth_storage_mode="file")
+    monkeypatch.setattr(
+        "app.core.startup_preflight.check_auth_path",
+        lambda path_value: None,
+    )
+
+    report = build_dependency_report(settings)
+
+    assert report["auth"]["status"] == "ok"
+    assert report["auth"]["mode"] == "file"
+    assert "database" not in report

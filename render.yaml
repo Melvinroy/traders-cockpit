@@ -6,9 +6,6 @@ services:
     plan: starter
     autoDeployTrigger: checksPass
     healthCheckPath: /health/ready
-    disk:
-      name: auth
-      mountPath: /var/lib/traders-cockpit/auth
     envVars:
       - key: APP_ENV
         value: staging
@@ -22,8 +19,8 @@ services:
         value: none
       - key: AUTH_COOKIE_SECURE
         value: "true"
-      - key: AUTH_DB_PATH
-        value: /var/lib/traders-cockpit/auth/auth.db
+      - key: AUTH_STORAGE_MODE
+        value: database
       - key: ALLOW_SQLITE_FALLBACK
         value: "false"
       - key: BROKER_MODE

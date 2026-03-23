@@ -46,7 +46,7 @@ Required backend envs:
 - `CORS_ORIGINS`
 - `AUTH_COOKIE_SECURE=true`
 - `AUTH_COOKIE_SAMESITE=none` for cross-origin frontend/backends
-- `AUTH_DB_PATH` on a persistent disk path
+- `AUTH_STORAGE_MODE=database`
 - `AUTH_ADMIN_USERNAME`
 - `AUTH_ADMIN_PASSWORD`
 - `AUTH_TRADER_USERNAME`
@@ -68,7 +68,7 @@ The repo includes [render.yaml](/Users/melvi/OneDrive/Desktop/Traders%20Cockpit/
 - managed Postgres
 - managed Redis
 
-Treat the current Render blueprint as a staging starting point. Before using it as a production contract, add an explicit persistent path for `AUTH_DB_PATH` and keep the hosted env file aligned with `.env.production.example`.
+The current Render blueprint keeps hosted auth inside the primary database by setting `AUTH_STORAGE_MODE=database`. Keep the hosted env file aligned with `.env.production.example`.
 
 After backend deployment, copy the public backend origin into:
 
@@ -96,6 +96,7 @@ The hosted env check now rejects:
 
 - localhost / `127.0.0.1` public URLs
 - SQLite-backed hosted config
+- file-backed hosted auth config
 - insecure auth cookie settings
 - missing live confirmation token when live trading is enabled
 
@@ -131,19 +132,14 @@ Expected artifacts:
 
 The hosted smoke reuses the same login and setup-load browser path as the local smoke flow, but points it at the hosted frontend/backend pair you provide.
 
-## Current Render Tradeoff
+## Hosted Auth Persistence
 
-The current Render blueprint keeps auth state on a persistent disk:
+Hosted auth now uses the primary database rather than a mounted disk:
 
-- disk mount: `/var/lib/traders-cockpit/auth`
-- auth DB path: `/var/lib/traders-cockpit/auth/auth.db`
+- `AUTH_STORAGE_MODE=database`
+- auth users, sessions, and login attempts live in Postgres
 
-This is the current hosted-safe compromise for durable auth sessions, but it has tradeoffs:
-
-- attached persistent disks limit scaling options
-- disk-backed auth on a single web service is not the long-term multi-instance design
-
-The follow-up production tranche should migrate hosted auth persistence to Postgres if multi-instance scaling becomes a real requirement.
+Local development can still use `AUTH_STORAGE_MODE=file` with `AUTH_DB_PATH`, but hosted staging and production should keep auth on the primary database.
 
 ## Promotion Path
 
