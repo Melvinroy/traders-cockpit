@@ -4,6 +4,7 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from time import perf_counter
+from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi import Request
@@ -16,9 +17,11 @@ from app.api.routes_auth import router as auth_router
 from app.core.config import Settings
 from app.core.observability import (
     REQUEST_ID_HEADER,
+    bind_client_session_id,
     bind_request_id,
     log_event,
     request_log_fields,
+    reset_client_session_id,
     reset_request_id,
     resolve_request_id,
 )
@@ -142,11 +145,53 @@ def health_dependencies() -> JSONResponse:
 
 @app.websocket("/ws/cockpit")
 async def cockpit_ws(websocket: WebSocket) -> None:
+    websocket_id = uuid4().hex[:12]
+    client_session_id = (websocket.query_params.get("client_session_id") or "").strip() or None
+    connection_request_id = resolve_request_id(
+        websocket.query_params.get("request_id") or websocket.headers.get(REQUEST_ID_HEADER)
+    )
+    username: str | None = None
+    connected = False
+    connect_request_token = bind_request_id(connection_request_id)
+    connect_session_token = bind_client_session_id(client_session_id)
     try:
-        await require_websocket_session(websocket)
+        session = await require_websocket_session(websocket)
     except RuntimeError:
+        log_event(
+            "ws.auth.failed",
+            level="warning",
+            **request_log_fields(
+                path=websocket.url.path,
+                client_ip=websocket.client.host if websocket.client else None,
+                websocket_id=websocket_id,
+            ),
+        )
+        reset_client_session_id(connect_session_token)
+        reset_request_id(connect_request_token)
         return
-    await ws_manager.connect("cockpit", websocket)
+    username = str(session["user"]["username"])
+    log_event(
+        "ws.connect",
+        **request_log_fields(
+            path=websocket.url.path,
+            client_ip=websocket.client.host if websocket.client else None,
+            websocket_id=websocket_id,
+            username=username,
+            channel="cockpit",
+        ),
+    )
+    await ws_manager.connect(
+        "cockpit",
+        websocket,
+        metadata={
+            "websocket_id": websocket_id,
+            "username": username,
+            "client_session_id": client_session_id,
+        },
+    )
+    connected = True
+    reset_client_session_id(connect_session_token)
+    reset_request_id(connect_request_token)
     try:
         while True:
             raw = await websocket.receive_text()
@@ -154,9 +199,53 @@ async def cockpit_ws(websocket: WebSocket) -> None:
                 payload = json.loads(raw)
             except json.JSONDecodeError:
                 payload = {"action": "noop"}
-            if payload.get("action") == "subscribe_price":
-                with SessionLocal() as db:
-                    await service.publish_price_tick(db, str(payload.get("symbol", "")).upper())
+            action = str(payload.get("action") or "noop")
+            message_request_id = resolve_request_id(
+                payload.get("requestId") if isinstance(payload.get("requestId"), str) else None
+            )
+            message_client_session_id = (
+                str(payload.get("clientSessionId")).strip()
+                if payload.get("clientSessionId") not in (None, "")
+                else client_session_id
+            )
+            message_request_token = bind_request_id(message_request_id)
+            message_session_token = bind_client_session_id(message_client_session_id)
+            try:
+                log_event(
+                    "ws.message.received",
+                    **request_log_fields(
+                        path=websocket.url.path,
+                        client_ip=websocket.client.host if websocket.client else None,
+                        websocket_id=websocket_id,
+                        username=username,
+                        channel="cockpit",
+                        action=action,
+                        symbol=str(payload.get("symbol", "")).upper() or None,
+                    ),
+                )
+                if action == "subscribe_price":
+                    with SessionLocal() as db:
+                        await service.publish_price_tick(db, str(payload.get("symbol", "")).upper())
+            finally:
+                reset_client_session_id(message_session_token)
+                reset_request_id(message_request_token)
             await asyncio.sleep(0.05)
     except WebSocketDisconnect:
-        await ws_manager.disconnect("cockpit", websocket)
+        pass
+    finally:
+        if connected:
+            disconnect_token = bind_request_id(connection_request_id)
+            disconnect_session_token = bind_client_session_id(client_session_id)
+            log_event(
+                "ws.disconnect",
+                **request_log_fields(
+                    path=websocket.url.path,
+                    client_ip=websocket.client.host if websocket.client else None,
+                    websocket_id=websocket_id,
+                    username=username,
+                    channel="cockpit",
+                ),
+            )
+            reset_client_session_id(disconnect_session_token)
+            reset_request_id(disconnect_token)
+            await ws_manager.disconnect("cockpit", websocket)
