@@ -4,7 +4,11 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     plan: starter
-    autoDeploy: true
+    autoDeployTrigger: checksPass
+    healthCheckPath: /health
+    disk:
+      name: auth
+      mountPath: /var/lib/traders-cockpit/auth
     envVars:
       - key: APP_ENV
         value: staging
@@ -18,6 +22,8 @@ services:
         value: none
       - key: AUTH_COOKIE_SECURE
         value: "true"
+      - key: AUTH_DB_PATH
+        value: /var/lib/traders-cockpit/auth/auth.db
       - key: ALLOW_SQLITE_FALLBACK
         value: "false"
       - key: BROKER_MODE
