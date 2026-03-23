@@ -14,6 +14,7 @@ Use this checklist before opening or merging a promotion PR from `codex/integrat
 ## Required validation
 
 - backend CI passed on the current integration commit
+- migration smoke CI passed on the current integration commit if schema-affecting files changed
 - frontend CI passed on the current integration commit
 - local backend `pytest -q` passed if backend changed
 - local frontend `npm run lint`, `npm run test`, and `npm run build` passed if frontend changed
@@ -27,6 +28,7 @@ Use this checklist before opening or merging a promotion PR from `codex/integrat
 - does this release follow the merge sequence `codex/* -> codex/integration-app -> main`
 - does this promotion contain only staged, reviewed work
 - are all schema or env changes reflected in docs
+- is there a backup or snapshot plan for any schema-affecting promotion
 - are any live-trading controls still safely gated
 - can this release be rolled back by reverting the promotion merge
 - is there a hosted smoke plan with frontend URL, backend URL, env file, and artifact destination
