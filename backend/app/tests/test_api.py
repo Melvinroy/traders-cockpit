@@ -536,6 +536,53 @@ def test_trade_lifecycle() -> None:
     )
 
 
+def test_paper_limit_entry_stays_pending_and_can_be_canceled() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    pending_limit = round((setup["entry"] + setup["finalStop"]) / 2, 2)
+
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+            "order": simple_entry_order(limitPrice=pending_limit),
+        },
+    )
+    assert enter.status_code == 200
+    position = enter.json()
+    assert position["phase"] == "entry_pending"
+    root_order = next(order for order in position["orders"] if order["tranche"] == "AAPL")
+    assert root_order["status"] == "PENDING"
+    assert root_order["cancelable"] is True
+    assert root_order["brokerOrderId"]
+
+    recent_orders = client.get("/api/orders")
+    assert recent_orders.status_code == 200
+    assert any(
+        order["brokerOrderId"] == root_order["brokerOrderId"] for order in recent_orders.json()
+    )
+
+    cancel = client.delete(f"/api/orders/{root_order['brokerOrderId']}")
+    assert cancel.status_code == 200
+    canceled_order = cancel.json()
+    assert canceled_order["status"] == "CANCELED"
+
+    positions = client.get("/api/positions")
+    assert positions.status_code == 200
+    closed_position = next(
+        position for position in positions.json() if position["symbol"] == "AAPL"
+    )
+    assert closed_position["phase"] == "closed"
+
+
 def test_preview_trade_supports_sell_side_and_rejects_invalid_short_stop() -> None:
     client.put(
         "/api/account/settings",

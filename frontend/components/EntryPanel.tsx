@@ -211,6 +211,7 @@ export function EntryPanel(props: Props) {
             <div className={`entry-order-field ${typeIssue ? "entry-order-field-invalid" : ""}`}>
               <span className="entry-order-label">Type</span>
               <select
+                id="entryOrderType"
                 className="entry-select"
                 aria-invalid={Boolean(typeIssue)}
                 title={typeIssue ?? undefined}
@@ -227,6 +228,7 @@ export function EntryPanel(props: Props) {
             <div className={`entry-order-field ${tifIssue ? "entry-order-field-invalid" : ""}`}>
               <span className="entry-order-label">TIF</span>
               <select
+                id="entryTimeInForce"
                 className="entry-select"
                 aria-invalid={Boolean(tifIssue)}
                 title={tifIssue ?? undefined}
@@ -243,6 +245,7 @@ export function EntryPanel(props: Props) {
             <div className={`entry-order-field ${classIssue ? "entry-order-field-invalid" : ""}`}>
               <span className="entry-order-label">Class</span>
               <select
+                id="entryOrderClass"
                 className="entry-select"
                 aria-invalid={Boolean(classIssue)}
                 title={classIssue ?? undefined}
@@ -260,6 +263,7 @@ export function EntryPanel(props: Props) {
               <div className={`entry-order-field ${limitIssue ? "entry-order-field-invalid" : ""}`}>
                 <span className="entry-order-label">{limitFieldLabel}</span>
                 <input
+                  id="entryLimitPrice"
                   type="number"
                   inputMode="decimal"
                   value={order.limitPrice ?? ""}
@@ -279,6 +283,7 @@ export function EntryPanel(props: Props) {
               <div className={`entry-order-field ${triggerIssue ? "entry-order-field-invalid" : ""}`}>
                 <span className="entry-order-label">{triggerFieldLabel}</span>
                 <input
+                  id="entryStopPrice"
                   type="number"
                   inputMode="decimal"
                   value={order.stopPrice ?? ""}

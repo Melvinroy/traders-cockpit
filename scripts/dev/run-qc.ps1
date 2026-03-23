@@ -63,7 +63,10 @@ function Start-FrontendDev {
 function Start-FrontendProd {
   param([int]$Port)
 
-  Assert-PortFree -Port $Port -Purpose "Frontend production server"
+  if ($null -ne (Get-PortListener -Port $Port)) {
+    Stop-PortListenerProcess -Port $Port
+    Wait-ForPortClosed -Port $Port
+  }
 
   $frontendCmd = @(
     "set ""NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:$BackendPort""",
@@ -157,11 +160,13 @@ try {
   Invoke-BrowserSmoke -Url "http://127.0.0.1:$FrontendPort" -Label "dev-smoke-final"
   $env:FRONTEND_URL = "http://127.0.0.1:$FrontendPort"
   $env:BACKEND_URL = "http://127.0.0.1:$BackendPort"
+  node ..\scripts\dev\pending-cancel-qc.mjs
+  Assert-LastExitCode -Description "Pending cancel QC"
   node ..\scripts\dev\fidelity-baselines.mjs
   Assert-LastExitCode -Description "Fidelity baselines"
   node ..\scripts\dev\trade-flow-qc.mjs
   Assert-LastExitCode -Description "Trade flow QC"
-  foreach ($artifactName in @("baseline-idle.png", "baseline-setup-loaded.png", "baseline-trade-entered.png", "baseline-protected.png", "baseline-profit-flow.png")) {
+  foreach ($artifactName in @("pending-cancel-flow.png", "baseline-idle.png", "baseline-setup-loaded.png", "baseline-trade-entered.png", "baseline-protected.png", "baseline-profit-flow.png")) {
     $artifact = Join-Path $playwrightOutputDir $artifactName
     if (-not (Test-Path $artifact)) {
       throw "Expected fidelity artifact was not created: $artifact"
