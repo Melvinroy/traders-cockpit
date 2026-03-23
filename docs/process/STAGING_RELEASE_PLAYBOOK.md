@@ -7,6 +7,7 @@ Use this when `codex/integration-app` is being prepared for promotion into `main
 - feature work merged into `codex/integration-app`
 - open regressions or intentional deferrals documented in the promotion PR
 - env and schema changes reflected in `.env.example`, README, and migration docs
+- backup or snapshot plan prepared for any schema-affecting release
 
 ## Required Commands
 
@@ -19,6 +20,8 @@ If Docker-based verification is needed:
 ```powershell
 docker compose up --build
 ```
+
+If schema-affecting files changed, confirm the dedicated migration-smoke CI job is green before opening the promotion PR.
 
 ## Required Browser Artifacts
 
@@ -37,6 +40,7 @@ The following files must exist after QC:
 - promote only from `codex/integration-app` into `main`
 - if rollback is needed, revert the promotion merge rather than rewriting history
 - production-facing UI work must include browser QC evidence on the integration branch before promotion
+- schema-affecting promotions must link the backup or snapshot reference in the PR summary
 
 ## Merge Sequence
 
