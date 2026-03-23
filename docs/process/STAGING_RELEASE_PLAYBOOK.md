@@ -7,6 +7,7 @@ Use this when `codex/integration-app` is being prepared for promotion into `main
 - feature work merged into `codex/integration-app`
 - open regressions or intentional deferrals documented in the promotion PR
 - env and schema changes reflected in `.env.example`, README, and migration docs
+- hosted target URLs and credentials prepared when the release will be deployed beyond local staging
 
 ## Required Commands
 
@@ -20,6 +21,15 @@ If Docker-based verification is needed:
 docker compose up --build
 ```
 
+If the target environment is hosted staging or production, run post-deploy smoke after deploy:
+
+```powershell
+.\scripts\dev\run-hosted-smoke.ps1 `
+  -FrontendUrl "https://app.example.com" `
+  -BackendUrl "https://api.example.com" `
+  -EnvFile ".env.production.local"
+```
+
 ## Required Browser Artifacts
 
 The following files must exist after QC:
@@ -30,6 +40,13 @@ The following files must exist after QC:
 - `frontend/output/playwright/baseline-protected.png`
 - `frontend/output/playwright/baseline-profit-flow.png`
 
+For hosted deploys, also require:
+
+- `frontend/output/playwright/hosted-smoke.health.json`
+- `frontend/output/playwright/hosted-smoke.png`
+- `frontend/output/playwright/hosted-smoke.console.txt`
+- `frontend/output/playwright/hosted-smoke.network.txt`
+
 ## Promotion Notes
 
 - merge feature branches into `codex/integration-app` first
@@ -37,6 +54,7 @@ The following files must exist after QC:
 - promote only from `codex/integration-app` into `main`
 - if rollback is needed, revert the promotion merge rather than rewriting history
 - production-facing UI work must include browser QC evidence on the integration branch before promotion
+- hosted releases require post-deploy smoke evidence before they are considered complete
 
 ## Merge Sequence
 
