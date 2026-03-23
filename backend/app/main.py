@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from time import perf_counter
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,6 +14,14 @@ from app.api.deps_auth import require_websocket_session
 from app.api import routes_account, routes_market, routes_positions, routes_trade
 from app.api.routes_auth import router as auth_router
 from app.core.config import Settings
+from app.core.observability import (
+    REQUEST_ID_HEADER,
+    bind_request_id,
+    log_event,
+    request_log_fields,
+    reset_request_id,
+    resolve_request_id,
+)
 from app.core.startup_preflight import (
     build_dependency_report,
     build_liveness_report,
@@ -55,6 +65,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
+    token = bind_request_id(request_id)
+    request.state.request_id = request_id
+    started = perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = round((perf_counter() - started) * 1000, 2)
+        log_event(
+            "http.request.failed",
+            level="error",
+            **request_log_fields(
+                request,
+                status=500,
+                duration_ms=duration_ms,
+            ),
+        )
+        raise
+    response.headers[REQUEST_ID_HEADER] = request_id
+    duration_ms = round((perf_counter() - started) * 1000, 2)
+    log_event(
+        "http.request.completed",
+        **request_log_fields(
+            request,
+            status=response.status_code,
+            duration_ms=duration_ms,
+        ),
+    )
+    reset_request_id(token)
+    return response
+
 
 app.include_router(auth_router)
 app.include_router(routes_account.build_router(service))
