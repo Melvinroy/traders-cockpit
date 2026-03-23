@@ -193,7 +193,13 @@ class CockpitService:
         broker_status = "PENDING"
         root_order_type = self._local_entry_order_type(order)
         order_for_broker = self._build_broker_entry_order(
-            symbol, shares, order, payload.offHoursMode, session_state, enforce_alpaca_offhours
+            symbol,
+            shares,
+            order,
+            payload.offHoursMode,
+            session_state,
+            enforce_alpaca_offhours,
+            setup.last,
         )
         broker = self.broker.place_entry_order(order_for_broker)
         broker_status = broker.status or "PENDING"
@@ -1227,6 +1233,7 @@ class CockpitService:
         off_hours_mode: str | None,
         session_state: str,
         enforce_alpaca_offhours: bool,
+        reference_price: float,
     ) -> BrokerEntryOrder:
         extended_hours = False
         order_type = order.orderType
@@ -1259,6 +1266,7 @@ class CockpitService:
             take_profit_limit_price=take_profit.limitPrice if take_profit else None,
             stop_loss_stop_price=stop_loss.stopPrice if stop_loss else None,
             stop_loss_limit_price=stop_loss.limitPrice if stop_loss else None,
+            reference_price=reference_price,
         )
 
     def _entry_should_start_filled(
