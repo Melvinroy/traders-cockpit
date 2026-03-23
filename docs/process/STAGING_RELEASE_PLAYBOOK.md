@@ -36,6 +36,15 @@ The following files must exist after QC:
 - validate on integration before opening the promotion PR
 - promote only from `codex/integration-app` into `main`
 - if rollback is needed, revert the promotion merge rather than rewriting history
+- production-facing UI work must include browser QC evidence on the integration branch before promotion
+
+## Merge Sequence
+
+1. Merge a dedicated `codex/*` branch into `codex/integration-app`.
+2. Run staged validation on `codex/integration-app`.
+3. Refresh required browser artifacts for any visible cockpit changes.
+4. Open the promotion PR from `codex/integration-app` to `main`.
+5. After merge to `main`, close linked issue docs and prune merged branches.
 
 ## PR Summary Template
 
@@ -46,3 +55,4 @@ State:
 - env/schema changes
 - remaining known gaps
 - rollback plan
+- where screenshot/browser QC evidence is attached

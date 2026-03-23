@@ -11,6 +11,7 @@ class StopMode(BaseModel):
     pct: float | None = None
 
 
+EntrySide = Literal["buy", "sell"]
 EntryOrderType = Literal["market", "limit", "stop", "stop_limit"]
 TimeInForce = Literal["day", "gtc", "ioc", "fok", "opg", "cls"]
 OrderClass = Literal["simple", "bracket", "oco", "oto"]
@@ -27,6 +28,7 @@ class StopLossDraft(BaseModel):
 
 
 class EntryOrderDraft(BaseModel):
+    side: EntrySide = "buy"
     orderType: EntryOrderType = "limit"
     timeInForce: TimeInForce = "day"
     orderClass: OrderClass = "simple"

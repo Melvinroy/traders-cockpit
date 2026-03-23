@@ -34,7 +34,10 @@ Push-Location $repoRoot
 try {
   $env:POSTGRES_HOST_PORT = "$PostgresPort"
   $env:REDIS_HOST_PORT = "$RedisPort"
-  docker compose up -d postgres redis
+  cmd /c "docker compose up -d postgres redis"
+  if ($LASTEXITCODE -ne 0) {
+    throw "docker compose up failed with exit code $LASTEXITCODE."
+  }
 } finally {
   Remove-Item Env:POSTGRES_HOST_PORT -ErrorAction SilentlyContinue
   Remove-Item Env:REDIS_HOST_PORT -ErrorAction SilentlyContinue
@@ -48,7 +51,7 @@ try {
   $env:POSTGRES_HOST_PORT = "$PostgresPort"
   $env:REDIS_HOST_PORT = "$RedisPort"
   Wait-ForCommandSuccess -Description "postgres readiness" -ScriptBlock {
-    docker compose exec -T postgres pg_isready -U traders_cockpit -d traders_cockpit
+    cmd /c "docker compose exec -T postgres pg_isready -U traders_cockpit -d traders_cockpit"
   }
 } finally {
   Remove-Item Env:POSTGRES_HOST_PORT -ErrorAction SilentlyContinue

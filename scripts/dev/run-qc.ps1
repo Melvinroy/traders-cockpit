@@ -25,6 +25,14 @@ $profileEnv = Get-LocalProfileEnv -RepoRoot $repoRoot -EnvFile $EnvFile -Persona
 $qcAuthUsername = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_USERNAME" -Default "admin"
 $qcAuthPassword = Get-ResolvedValue -EnvValues $profileEnv -Key "AUTH_ADMIN_PASSWORD" -Default "change-me-admin"
 
+function Assert-LastExitCode {
+  param([Parameter(Mandatory = $true)][string]$Description)
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Description failed with exit code $LASTEXITCODE."
+  }
+}
+
 function Reset-FrontendNextCache {
   if (Test-Path $frontendNextDir) {
     cmd /c "rmdir /s /q ""$frontendNextDir""" | Out-Null
@@ -55,7 +63,10 @@ function Start-FrontendDev {
 function Start-FrontendProd {
   param([int]$Port)
 
-  Assert-PortFree -Port $Port -Purpose "Frontend production server"
+  if ($null -ne (Get-PortListener -Port $Port)) {
+    Stop-PortListenerProcess -Port $Port
+    Wait-ForPortClosed -Port $Port
+  }
 
   $frontendCmd = @(
     "set ""NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:$BackendPort""",
@@ -80,8 +91,12 @@ function Invoke-BrowserSmoke {
   )
 
   $env:FRONTEND_URL = $Url
+  $env:BACKEND_URL = "http://127.0.0.1:$BackendPort"
+  $env:NEXT_PUBLIC_API_BASE_URL = $env:BACKEND_URL
+  $env:NEXT_PUBLIC_WS_URL = "ws://127.0.0.1:$BackendPort/ws/cockpit"
   $env:BROWSER_SMOKE_LABEL = $Label
   node ..\scripts\dev\browser-smoke.mjs
+  Assert-LastExitCode -Description "Browser smoke ($Label)"
 
   foreach ($suffix in @("png", "console.txt", "network.txt")) {
     $artifact = Join-Path $playwrightOutputDir "$Label.$suffix"
@@ -109,6 +124,7 @@ if ($PersonalPaper) {
 Push-Location $backendDir
 try {
   python -m pytest -q
+  Assert-LastExitCode -Description "Backend pytest"
 } finally {
   Pop-Location
 }
@@ -118,8 +134,11 @@ try {
   $env:QC_AUTH_USERNAME = $qcAuthUsername
   $env:QC_AUTH_PASSWORD = $qcAuthPassword
   npm run lint
+  Assert-LastExitCode -Description "Frontend lint"
   npm run typecheck
+  Assert-LastExitCode -Description "Frontend typecheck"
   npm run test
+  Assert-LastExitCode -Description "Frontend test"
 
   Invoke-BrowserSmoke -Url "http://127.0.0.1:$FrontendPort" -Label "dev-smoke-initial"
 
@@ -129,6 +148,7 @@ try {
   $env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:$BackendPort"
   $env:NEXT_PUBLIC_WS_URL = "ws://127.0.0.1:$BackendPort/ws/cockpit"
   npm run build
+  Assert-LastExitCode -Description "Frontend build"
 
   Start-FrontendProd -Port $FrontendProdPort
   Invoke-BrowserSmoke -Url "http://127.0.0.1:$FrontendProdPort" -Label "prod-smoke"
@@ -140,9 +160,13 @@ try {
   Invoke-BrowserSmoke -Url "http://127.0.0.1:$FrontendPort" -Label "dev-smoke-final"
   $env:FRONTEND_URL = "http://127.0.0.1:$FrontendPort"
   $env:BACKEND_URL = "http://127.0.0.1:$BackendPort"
+  node ..\scripts\dev\pending-cancel-qc.mjs
+  Assert-LastExitCode -Description "Pending cancel QC"
   node ..\scripts\dev\fidelity-baselines.mjs
+  Assert-LastExitCode -Description "Fidelity baselines"
   node ..\scripts\dev\trade-flow-qc.mjs
-  foreach ($artifactName in @("baseline-idle.png", "baseline-setup-loaded.png", "baseline-trade-entered.png", "baseline-protected.png", "baseline-profit-flow.png")) {
+  Assert-LastExitCode -Description "Trade flow QC"
+  foreach ($artifactName in @("pending-cancel-flow.png", "baseline-idle.png", "baseline-setup-loaded.png", "baseline-trade-entered.png", "baseline-protected.png", "baseline-profit-flow.png")) {
     $artifact = Join-Path $playwrightOutputDir $artifactName
     if (-not (Test-Path $artifact)) {
       throw "Expected fidelity artifact was not created: $artifact"

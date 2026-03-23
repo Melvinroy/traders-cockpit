@@ -1,5 +1,6 @@
 export type StopMode = { mode: "stop" | "be"; pct: number | null };
 
+export type EntrySide = "buy" | "sell";
 export type EntryOrderType = "market" | "limit" | "stop" | "stop_limit";
 export type TimeInForce = "day" | "gtc" | "ioc" | "fok" | "opg" | "cls";
 export type OrderClass = "simple" | "bracket" | "oco" | "oto";
@@ -15,6 +16,7 @@ export type StopLossDraft = {
 };
 
 export type EntryOrderDraft = {
+  side: EntrySide;
   orderType: EntryOrderType;
   timeInForce: TimeInForce;
   orderClass: OrderClass;
@@ -123,6 +125,7 @@ export type SetupResponse = {
   buyingPowerNote?: string | null;
   atrExtension: number;
   extFrom10Ma: number;
+  entryOrder?: EntryOrderDraft;
 };
 
 export type TradePreviewResponse = {

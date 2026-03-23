@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -30,6 +31,7 @@ class BrokerEntryOrder:
     take_profit_limit_price: float | None = None
     stop_loss_stop_price: float | None = None
     stop_loss_limit_price: float | None = None
+    reference_price: float | None = None
 
 
 class BrokerAdapter:
@@ -43,14 +45,24 @@ class BrokerAdapter:
             )
         )
 
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
         raise NotImplementedError
 
-    def place_limit_order(self, symbol: str, qty: int, limit_price: float) -> BrokerOrderResult:
+    def place_limit_order(
+        self,
+        symbol: str,
+        qty: int,
+        limit_price: float,
+        side: str = "sell",
+        time_in_force: str = "gtc",
+        extended_hours: bool = False,
+    ) -> BrokerOrderResult:
         raise NotImplementedError
 
     def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
     ) -> BrokerOrderResult:
         raise NotImplementedError
 
@@ -79,10 +91,78 @@ class BrokerAdapter:
 
 
 class PaperBrokerAdapter(BrokerAdapter):
+    def __init__(self) -> None:
+        self._orders: dict[str, dict] = {}
+
+    def _next_broker_order_id(self) -> str:
+        return f"paper-{uuid4().hex[:12]}"
+
+    def _timestamp(self) -> str:
+        return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    def _store_pending_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
+        broker_order_id = self._next_broker_order_id()
+        now = self._timestamp()
+        payload = {
+            "id": broker_order_id,
+            "client_order_id": broker_order_id,
+            "symbol": order.symbol,
+            "qty": str(order.qty),
+            "filled_qty": "0",
+            "side": order.side,
+            "type": order.order_type,
+            "time_in_force": order.time_in_force,
+            "order_class": order.order_class,
+            "limit_price": order.limit_price,
+            "stop_price": order.stop_price,
+            "extended_hours": order.extended_hours,
+            "status": "accepted",
+            "created_at": now,
+            "updated_at": now,
+        }
+        self._orders[broker_order_id] = payload
+        return BrokerOrderResult(broker_order_id=broker_order_id, status="PENDING", payload=payload)
+
+    def _paper_entry_fills_immediately(self, order: BrokerEntryOrder) -> bool:
+        if order.order_class != "simple":
+            return False
+        if order.order_type == "market":
+            return True
+        if order.order_type == "limit":
+            if order.limit_price is None or order.reference_price is None:
+                return False
+            if order.side == "sell":
+                return order.limit_price <= order.reference_price
+            return order.limit_price >= order.reference_price
+        return False
+
     def place_entry_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
+        if self._paper_entry_fills_immediately(order):
+            return BrokerOrderResult(
+                broker_order_id=None,
+                status="FILLED",
+                payload={
+                    "symbol": order.symbol,
+                    "qty": str(order.qty),
+                    "side": order.side,
+                    "type": order.order_type,
+                    "time_in_force": order.time_in_force,
+                    "order_class": order.order_class,
+                    "limit_price": order.limit_price,
+                    "stop_price": order.stop_price,
+                    "extended_hours": order.extended_hours,
+                    "status": "filled",
+                },
+            )
+        if order.order_type in {"limit", "stop", "stop_limit"} or order.order_class in {
+            "bracket",
+            "oco",
+            "oto",
+        }:
+            return self._store_pending_order(order)
         return BrokerOrderResult(
             broker_order_id=None,
-            status="ACTIVE" if order.order_class in {"bracket", "oco", "oto"} else "FILLED",
+            status="FILLED",
             payload={
                 "symbol": order.symbol,
                 "qty": str(order.qty),
@@ -93,21 +173,31 @@ class PaperBrokerAdapter(BrokerAdapter):
                 "limit_price": order.limit_price,
                 "stop_price": order.stop_price,
                 "extended_hours": order.extended_hours,
-                "status": "accepted",
+                "status": "filled",
             },
         )
 
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="FILLED")
 
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="ACTIVE")
 
-    def place_limit_order(self, symbol: str, qty: int, limit_price: float) -> BrokerOrderResult:
+    def place_limit_order(
+        self,
+        symbol: str,
+        qty: int,
+        limit_price: float,
+        side: str = "sell",
+        time_in_force: str = "gtc",
+        extended_hours: bool = False,
+    ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="FILLED")
 
     def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
     ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="ACTIVE")
 
@@ -120,13 +210,23 @@ class PaperBrokerAdapter(BrokerAdapter):
         return min_qty
 
     def cancel_order(self, broker_order_id: str) -> None:
+        payload = self._orders.get(broker_order_id)
+        if payload is not None:
+            payload["status"] = "canceled"
+            payload["updated_at"] = self._timestamp()
         return None
 
     def list_recent_orders(self, limit: int = 50) -> list[dict]:
-        return []
+        rows = sorted(
+            self._orders.values(),
+            key=lambda payload: payload.get("updated_at") or payload.get("created_at") or "",
+            reverse=True,
+        )
+        return [dict(order) for order in rows[:limit]]
 
     def get_order(self, broker_order_id: str) -> dict | None:
-        return None
+        payload = self._orders.get(broker_order_id)
+        return dict(payload) if payload is not None else None
 
     def get_session_state(self) -> str:
         return "regular_open"
@@ -251,7 +351,9 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             )
         )
 
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
                 "ACTIVE", "Alpaca paper credentials are missing for stop execution"
@@ -260,7 +362,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             BrokerEntryOrder(
                 symbol=symbol,
                 qty=qty,
-                side="sell",
+                side=side,
                 order_type="stop",
                 stop_price=stop_price,
                 time_in_force="gtc",
@@ -294,7 +396,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         )
 
     def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
@@ -303,7 +405,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         payload = {
             "symbol": symbol,
             "qty": qty,
-            "side": "sell",
+            "side": side,
             "type": "trailing_stop",
             "time_in_force": "gtc",
         }

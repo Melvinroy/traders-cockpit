@@ -3,14 +3,30 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from time import perf_counter
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.deps_auth import require_websocket_session
 from app.api import routes_account, routes_market, routes_positions, routes_trade
 from app.api.routes_auth import router as auth_router
 from app.core.config import Settings
+from app.core.observability import (
+    REQUEST_ID_HEADER,
+    bind_request_id,
+    log_event,
+    request_log_fields,
+    reset_request_id,
+    resolve_request_id,
+)
+from app.core.startup_preflight import (
+    build_dependency_report,
+    build_liveness_report,
+    build_readiness_report,
+)
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.services.auth import get_auth_store
@@ -50,6 +66,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
+    token = bind_request_id(request_id)
+    request.state.request_id = request_id
+    started = perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = round((perf_counter() - started) * 1000, 2)
+        log_event(
+            "http.request.failed",
+            level="error",
+            **request_log_fields(
+                request,
+                status=500,
+                duration_ms=duration_ms,
+            ),
+        )
+        raise
+    response.headers[REQUEST_ID_HEADER] = request_id
+    duration_ms = round((perf_counter() - started) * 1000, 2)
+    log_event(
+        "http.request.completed",
+        **request_log_fields(
+            request,
+            status=response.status_code,
+            duration_ms=duration_ms,
+        ),
+    )
+    reset_request_id(token)
+    return response
+
+
 app.include_router(auth_router)
 app.include_router(routes_account.build_router(service))
 app.include_router(routes_market.build_router(service))
@@ -58,8 +109,35 @@ app.include_router(routes_trade.build_router(service))
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "broker_mode": settings.broker_mode}
+def health() -> JSONResponse:
+    return JSONResponse(build_liveness_report(settings))
+
+
+@app.get("/health/live")
+def health_live() -> JSONResponse:
+    return JSONResponse(build_liveness_report(settings))
+
+
+@app.get("/health/ready")
+def health_ready() -> JSONResponse:
+    payload = build_readiness_report(settings)
+    status_code = 200 if payload["status"] == "ok" else 503
+    return JSONResponse(payload, status_code=status_code)
+
+
+@app.get("/health/deps")
+def health_dependencies() -> JSONResponse:
+    payload = {
+        "status": "ok",
+        "kind": "deps",
+        "app_env": settings.app_env,
+        "broker_mode": settings.broker_mode,
+        "dependencies": build_dependency_report(settings),
+    }
+    if any(item.get("status") != "ok" for item in payload["dependencies"].values()):
+        payload["status"] = "error"
+    status_code = 200 if payload["status"] == "ok" else 503
+    return JSONResponse(payload, status_code=status_code)
 
 
 @app.websocket("/ws/cockpit")

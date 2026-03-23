@@ -1,15 +1,17 @@
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const frontendUrl = process.env.FRONTEND_URL || "http://127.0.0.1:3010";
 const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8010";
-const outputDir = path.resolve(process.cwd(), "output", "playwright");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, "..", "..");
+const outputDir = path.join(repoRoot, "frontend", "output", "playwright");
 const qcSymbol = (process.env.QC_SYMBOL || "MSFT").trim().toUpperCase() || "MSFT";
 const require = createRequire(import.meta.url);
 const playwrightEntry = require.resolve("playwright", {
-  paths: [process.cwd(), path.resolve(process.cwd(), "frontend")]
+  paths: [repoRoot, path.join(repoRoot, "frontend")]
 });
 const playwrightModule = await import(pathToFileURL(playwrightEntry).href);
 const { chromium } = playwrightModule.default ?? playwrightModule;
@@ -101,7 +103,7 @@ try {
   await fs.mkdir(outputDir, { recursive: true });
   await seedAuthSession(page);
 
-  const response = await page.goto(frontendUrl, { waitUntil: "networkidle" });
+  const response = await page.goto(frontendUrl, { waitUntil: "load" });
   if (!response || response.status() >= 400) {
     throw new Error(`Frontend root failed to load for baseline capture at ${frontendUrl}.`);
   }
@@ -119,9 +121,10 @@ try {
   await page.getByText("SETUP LOADED").waitFor({ timeout: 15000 });
   await page.screenshot({ path: path.join(outputDir, "baseline-setup-loaded.png"), fullPage: true });
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "load" });
   await ensureCockpitReady(page);
-  await page.waitForTimeout(1500);
+  await page.locator(".state-display").waitFor({ timeout: 15000 });
+  await page.waitForTimeout(1000);
   const phaseText = (await page.locator(".state-display").textContent())?.trim() || "unknown";
   await page.screenshot({ path: path.join(outputDir, `baseline-${safeName(phaseText)}.png`), fullPage: true });
 } finally {

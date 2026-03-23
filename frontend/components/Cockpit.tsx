@@ -13,8 +13,10 @@ import { RunningPnlPanel } from "@/components/RunningPnlPanel";
 import { SetupPanel } from "@/components/SetupPanel";
 import { StopProtectionPanel } from "@/components/StopProtectionPanel";
 import { ApiError, api } from "@/lib/api";
-import { defaultAllocationPcts, defaultStopPcts, normalizeAllocationPcts, normalizeStopPcts } from "@/lib/cockpit-ui";
-import type { AccountView, AuthUser, EntryOrderDraft, LogEntry, OffHoursMode, OrderView, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
+import { defaultAllocationPcts, defaultStopPcts, entryDirection, normalizeAllocationPcts, normalizeStopPcts } from "@/lib/cockpit-ui";
+import { evaluateEntryOrderRules } from "@/lib/entry-order-rules";
+import { defaultStopModesFor, normalizeStopDraftSelection, resolveStopPreviewSelection, stopDraftKey, type StopDraftSelection } from "@/lib/stop-preview";
+import type { AccountView, AuthUser, EntryOrderDraft, EntrySide, LogEntry, OffHoursMode, OrderView, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
 
 const DEFAULT_STOP_MODES: StopMode[] = [
   { mode: "stop", pct: 33.33 },
@@ -29,6 +31,7 @@ const DEFAULT_TRANCHE_MODES: TrancheMode[] = [
 ];
 
 const DEFAULT_ENTRY_ORDER: EntryOrderDraft = {
+  side: "buy",
   orderType: "limit",
   timeInForce: "day",
   orderClass: "simple",
@@ -106,10 +109,23 @@ function sanitizeLayoutState(layout: LayoutState): LayoutState {
   };
 }
 
-function effectiveStopPrice(setup: SetupResponse | null, stopRef: "lod" | "atr" | "manual", manualStop: number | null) {
+function effectiveStopPrice(
+  setup: SetupResponse | null,
+  stopRef: "lod" | "atr" | "manual",
+  manualStop: number | null,
+  side: EntrySide,
+  entryPrice: number,
+) {
   if (!setup) return 0;
   if (stopRef === "manual") return manualStop ?? 0;
-  return stopRef === "atr" ? setup.atrStop : setup.lodStop;
+  if (stopRef === "atr") {
+    const atrOffset = Number.isFinite(setup.atr14) ? setup.atr14 : 0;
+    const baseEntry = entryPrice > 0 ? entryPrice : setup.entry;
+    return side === "sell"
+      ? Number((baseEntry + atrOffset).toFixed(2))
+      : Number((baseEntry - atrOffset).toFixed(2));
+  }
+  return side === "sell" ? setup.hod : setup.lodStop;
 }
 
 function deriveSetupForSelection(
@@ -117,15 +133,20 @@ function deriveSetupForSelection(
   account: AccountView | null,
   stopRef: "lod" | "atr" | "manual",
   manualStop: number | null,
-  entryPrice: number
+  entryPrice: number,
+  side: EntrySide,
 ) {
   if (!setup) return null;
   const equity = account?.equity ?? setup.accountEquity;
   const buyingPower = account?.buying_power ?? setup.accountBuyingPower;
   const riskPct = account?.risk_pct ?? setup.riskPct;
-  const stopPrice = stopRef === "manual" ? manualStop : stopRef === "atr" ? setup.atrStop : setup.lodStop;
-  const validStop = typeof stopPrice === "number" && Number.isFinite(stopPrice) && stopPrice > 0 && stopPrice < entryPrice;
-  const perShareRisk = validStop ? Number((entryPrice - stopPrice).toFixed(2)) : 0;
+  const stopPrice = effectiveStopPrice(setup, stopRef, manualStop, side, entryPrice);
+  const direction = entryDirection(side);
+  const validStop = typeof stopPrice === "number"
+    && Number.isFinite(stopPrice)
+    && stopPrice > 0
+    && direction * (entryPrice - stopPrice) > 0;
+  const perShareRisk = validStop ? Number(Math.abs(entryPrice - stopPrice).toFixed(2)) : 0;
   const dollarRisk = Number((equity * (riskPct / 100)).toFixed(2));
   const maxNotionalCap = equity * ((account?.max_position_notional_pct ?? 100) / 100);
   const effectiveNotionalCap = Math.min(buyingPower, maxNotionalCap);
@@ -144,18 +165,15 @@ function deriveSetupForSelection(
     riskPct,
     accountEquity: equity,
     accountBuyingPower: buyingPower,
-    r1: perShareRisk > 0 ? Number((entryPrice + perShareRisk).toFixed(2)) : entryPrice,
-    r2: perShareRisk > 0 ? Number((entryPrice + perShareRisk * 2).toFixed(2)) : entryPrice,
-    r3: perShareRisk > 0 ? Number((entryPrice + perShareRisk * 3).toFixed(2)) : entryPrice
+    entryOrder: {
+      ...DEFAULT_ENTRY_ORDER,
+      ...(setup.entryOrder ?? {}),
+      side,
+    },
+    r1: perShareRisk > 0 ? Number((entryPrice + direction * perShareRisk).toFixed(2)) : entryPrice,
+    r2: perShareRisk > 0 ? Number((entryPrice + direction * perShareRisk * 2).toFixed(2)) : entryPrice,
+    r3: perShareRisk > 0 ? Number((entryPrice + direction * perShareRisk * 3).toFixed(2)) : entryPrice
   };
-}
-
-function defaultStopModesFor(stopMode: number): StopMode[] {
-  const defaults = defaultStopPcts(stopMode);
-  return DEFAULT_STOP_MODES.map((mode, index) => ({
-    ...mode,
-    pct: defaults[index] ?? mode.pct,
-  }));
 }
 
 function defaultTrancheModesFor(count: number): TrancheMode[] {
@@ -171,9 +189,13 @@ function buildEntryOrderDraft(
   entryPrice: number,
   protectiveStop: number,
   trancheModes: TrancheMode[],
+  side: EntrySide,
 ): EntryOrderDraft {
+  const direction = entryDirection(side);
+  const perShareRisk = Number(Math.abs(entryPrice - protectiveStop).toFixed(2));
   const next = {
     ...current,
+    side,
     limitPrice: current.orderType === "limit" || current.orderType === "stop_limit" ? (current.limitPrice ?? entryPrice) : null,
     stopPrice: current.orderType === "stop" || current.orderType === "stop_limit" ? (current.stopPrice ?? entryPrice) : null,
   };
@@ -181,7 +203,11 @@ function buildEntryOrderDraft(
   const takeProfitLimit = primaryProfitMode
     ? primaryProfitMode.target === "Manual" && primaryProfitMode.manualPrice !== null
       ? primaryProfitMode.manualPrice
-      : null
+      : primaryProfitMode.target === "Manual"
+        ? null
+      : primaryProfitMode.mode === "runner"
+        ? null
+        : Number((entryPrice + direction * perShareRisk * { "1R": 1, "2R": 2, "3R": 3 }[primaryProfitMode.target]).toFixed(2))
     : null;
   if (next.orderClass === "bracket") {
     next.takeProfit = { limitPrice: takeProfitLimit };
@@ -245,6 +271,7 @@ export function Cockpit() {
   const setupLoadedRef = useRef(false);
   const stopModeRef = useRef(3);
   const stopModesRef = useRef<StopMode[]>(DEFAULT_STOP_MODES);
+  const stopDraftsRef = useRef<Record<string, StopDraftSelection>>({});
   const trancheCountRef = useRef(3);
   const trancheModesRef = useRef<TrancheMode[]>(DEFAULT_TRANCHE_MODES);
   const dragCleanupRef = useRef<(() => void) | null>(null);
@@ -253,19 +280,25 @@ export function Cockpit() {
     () => positions.find((position) => position.symbol === activeSymbol) ?? null,
     [positions, activeSymbol]
   );
+  const draftEntrySide = entryOrder.side;
   const effectiveSetup = useMemo(
-    () => deriveSetupForSelection(setup, account, stopRef, manualStop, entryPrice || setup?.entry || 0),
-    [account, entryPrice, manualStop, setup, stopRef]
+    () => deriveSetupForSelection(setup, account, stopRef, manualStop, entryPrice || setup?.entry || 0, draftEntrySide),
+    [account, draftEntrySide, entryPrice, manualStop, setup, stopRef]
+  );
+  const protectiveStopPrice = useMemo(
+    () => effectiveStopPrice(setup, stopRef, manualStop, draftEntrySide, entryPrice || setup?.entry || 0),
+    [draftEntrySide, entryPrice, manualStop, setup, stopRef]
   );
   const effectiveEntryOrder = useMemo(
     () =>
       buildEntryOrderDraft(
         entryOrder,
         entryPrice || effectiveSetup?.entry || 0,
-        effectiveStopPrice(setup, stopRef, manualStop),
+        protectiveStopPrice,
         trancheModes,
+        draftEntrySide,
       ),
-    [entryOrder, entryPrice, manualStop, setup, stopRef, effectiveSetup, trancheModes]
+    [draftEntrySide, effectiveSetup, entryOrder, entryPrice, protectiveStopPrice, trancheModes]
   );
   const attachedSummary = useMemo(
     () => ({
@@ -274,6 +307,19 @@ export function Cockpit() {
     }),
     [effectiveEntryOrder]
   );
+  const entryOrderIssues = useMemo(
+    () =>
+      evaluateEntryOrderRules({
+        order: effectiveEntryOrder,
+        sessionState: effectiveSetup?.sessionState ?? setup?.sessionState ?? "closed",
+        executionProvider: effectiveSetup?.executionProvider ?? setup?.executionProvider ?? "paper",
+      }),
+    [effectiveEntryOrder, effectiveSetup?.executionProvider, effectiveSetup?.sessionState, setup?.executionProvider, setup?.sessionState]
+  );
+  const entryOrderErrors = useMemo(
+    () => entryOrderIssues.filter((issue) => issue.severity === "error"),
+    [entryOrderIssues]
+  );
   const phase = activePosition?.phase ?? (setup ? "setup_loaded" : "idle");
   const livePrice = activePosition?.livePrice ?? effectiveSetup?.last ?? null;
   const delta = livePrice !== null && effectiveSetup ? livePrice - effectiveSetup.entry : 0;
@@ -281,15 +327,13 @@ export function Cockpit() {
   const normalizedTicker = ticker.trim().toUpperCase();
   const tickerMatchesActiveSetup = normalizedTicker.length > 0 && normalizedTicker === activeLoadedTicker;
   const actionTickerMismatch = Boolean(setup) && normalizedTicker.length > 0 && !tickerMatchesActiveSetup;
-  const orderConfigDisabledReason = effectiveEntryOrder.orderClass === "oco"
-    ? "OCO is exit-only at Alpaca and cannot be used for a new entry."
-    : null;
-  const actionsDisabled = !effectiveSetup || setupLoadPending || actionTickerMismatch || Boolean(orderConfigDisabledReason);
+  const actionsDisabled = !effectiveSetup || setupLoadPending || actionTickerMismatch || entryOrderErrors.length > 0;
   const disabledReason = setupLoadPending
     ? `Resolving ${normalizedTicker || activeLoadedTicker || "ticker"}...`
     : actionTickerMismatch
       ? `Wait for ${normalizedTicker} to finish loading before previewing or entering a trade.`
-      : orderConfigDisabledReason ?? effectiveSetup?.sizingWarning ?? null;
+      : null;
+  const activeEntrySide = activePosition?.setup?.entryOrder?.side === "sell" ? "sell" : effectiveEntryOrder.side;
   const leftColumnCollapsed = panelCollapse.stopProtection && panelCollapse.profitTaking;
   const rightColumnCollapsed = panelCollapse.recentOrders && panelCollapse.runningPnl;
   const effectiveExecutionLeftPct = leftColumnCollapsed && !rightColumnCollapsed
@@ -408,6 +452,14 @@ export function Cockpit() {
 
   const applyPositionState = useCallback(
     (position: PositionView) => {
+      const nextStopSelection = resolveStopPreviewSelection({
+        position,
+        localDraft: stopDraftsRef.current[stopDraftKey(position)] ?? null,
+        fallback: {
+          stopMode: stopModeRef.current || 3,
+          stopModes: stopModesRef.current,
+        },
+      });
       activeSymbolRef.current = position.symbol;
       setupLoadedRef.current = true;
       setActiveSymbol(position.symbol);
@@ -419,21 +471,19 @@ export function Cockpit() {
       setManualStop(position.setup.stopReferenceDefault === "manual" ? null : position.setup.finalStop);
       setEntryOrder({
         ...DEFAULT_ENTRY_ORDER,
+        side: position.setup.entryOrder?.side === "sell" ? "sell" : "buy",
         limitPrice: position.setup.entry,
       });
       setOffHoursMode("queue_for_open");
-      const resolvedStopMode = position.stopMode && position.stopMode > 0 ? position.stopMode : stopModeRef.current || 3;
       const resolvedTrancheCount = position.trancheCount && position.trancheCount > 0
         ? position.trancheCount
         : trancheCountRef.current || 3;
-      const nextStopModes = position.stopModes.length
-        ? position.stopModes
-        : stopModesRef.current.slice(0, resolvedStopMode);
       const nextTrancheModes = position.trancheModes.length
         ? position.trancheModes
         : trancheModesRef.current.slice(0, resolvedTrancheCount);
-      setStopMode(resolvedStopMode);
-      setStopModes(nextStopModes.length ? nextStopModes : defaultStopModesFor(resolvedStopMode));
+      stopDraftsRef.current[stopDraftKey(position)] = nextStopSelection;
+      setStopMode(nextStopSelection.stopMode);
+      setStopModes(nextStopSelection.stopModes);
       setTrancheCount(resolvedTrancheCount);
       setTrancheModes(nextTrancheModes.length ? nextTrancheModes : defaultTrancheModesFor(resolvedTrancheCount));
       subscribePrice(position.symbol);
@@ -680,6 +730,7 @@ export function Cockpit() {
     setManualStop(nextSetup.stopReferenceDefault === "manual" ? null : nextSetup.finalStop);
     setEntryOrder({
       ...DEFAULT_ENTRY_ORDER,
+      side: "buy",
       limitPrice: nextSetup.entry,
     });
     setActiveSymbol("");
@@ -738,6 +789,7 @@ export function Cockpit() {
         setManualStop(nextSetup.stopReferenceDefault === "manual" ? null : nextSetup.finalStop);
         setEntryOrder({
           ...DEFAULT_ENTRY_ORDER,
+          side: "buy",
           limitPrice: nextSetup.entry,
         });
         setStopModes(defaultStopModesFor(stopMode));
@@ -771,13 +823,13 @@ export function Cockpit() {
         symbol: activeLoadedTicker || ticker,
         entry: entryPrice,
         stopRef,
-        stopPrice: effectiveStopPrice(setup, stopRef, manualStop),
+        stopPrice: protectiveStopPrice,
         riskPct: account?.risk_pct ?? setup.riskPct,
         order: effectiveEntryOrder,
       });
       prependLog(
         "info",
-        `Preview: ${preview.symbol} buy ${preview.shares} sh @ ${preview.entry.toFixed(2)} stop ${preview.finalStop.toFixed(2)}`,
+        `Preview: ${preview.symbol} ${effectiveEntryOrder.side.toUpperCase()} ${preview.shares} sh @ ${preview.entry.toFixed(2)} stop ${preview.finalStop.toFixed(2)}`,
         preview.symbol
       );
       pulse("preview");
@@ -808,7 +860,7 @@ export function Cockpit() {
         symbol: activeLoadedTicker || ticker,
         entry: entryPrice,
         stopRef,
-        stopPrice: effectiveStopPrice(setup, stopRef, manualStop),
+        stopPrice: protectiveStopPrice,
         trancheCount,
         trancheModes: trancheModes.slice(0, trancheCount),
         offHoursMode: setup.sessionState === "regular_open" ? null : mode,
@@ -1095,7 +1147,9 @@ export function Cockpit() {
             entryPrice={entryPrice || effectiveSetup?.entry || 0}
             stopRef={stopRef}
             manualStop={manualStop}
+            displayStopPrice={protectiveStopPrice || null}
             order={effectiveEntryOrder}
+            orderIssues={entryOrderIssues}
             attachedSummary={attachedSummary}
             actionsDisabled={actionsDisabled}
             disabledReason={disabledReason}
@@ -1114,6 +1168,7 @@ export function Cockpit() {
               <StopProtectionPanel
                 setup={effectiveSetup}
                 phase={activePosition?.phase ?? null}
+                entrySide={activeEntrySide}
                 stopMode={stopMode}
                 stopModes={stopModes}
                 tranches={activePosition?.tranches ?? []}
@@ -1124,34 +1179,47 @@ export function Cockpit() {
                 collapsed={panelCollapse.stopProtection}
                 onToggleCollapse={() => updateCollapse("stopProtection")}
                 onStopModeChange={(value) => {
-                  setStopMode(value);
-                  setStopModes(defaultStopModesFor(value));
+                  const nextSelection = normalizeStopDraftSelection(value, defaultStopModesFor(value));
+                  const draftKey = activePosition ? stopDraftKey(activePosition) : "";
+                  if (draftKey) {
+                    stopDraftsRef.current[draftKey] = nextSelection;
+                  }
+                  setStopMode(nextSelection.stopMode);
+                  setStopModes(nextSelection.stopModes);
                 }}
-                onStopModeValueChange={(index, value) =>
-                  setStopModes((current) => {
-                    const next = current.map((item, itemIndex) => (itemIndex === index ? value : item));
-                    if (value.mode === "be") {
-                      for (let itemIndex = 0; itemIndex <= index; itemIndex += 1) {
-                        next[itemIndex] = { ...next[itemIndex], mode: "be", pct: 0 };
-                      }
-                      const remaining = stopMode - (index + 1);
-                      for (let itemIndex = index + 1; itemIndex < stopMode; itemIndex += 1) {
-                        next[itemIndex] = {
-                          ...next[itemIndex],
-                          mode: "stop",
-                          pct: Number((((itemIndex - index) / Math.max(1, remaining)) * 100).toFixed(2)),
-                        };
-                      }
-                      return next;
-                    }
-                    return normalizeStopPcts(
-                      next,
-                      stopMode,
-                      index,
-                      Number(value.pct ?? defaultStopPcts(stopMode)[index] ?? 100)
-                    );
-                  })
-                }
+                onStopModeValueChange={(index, value) => {
+                  const currentStopMode = stopModeRef.current || 3;
+                  const draftKey = activePosition ? stopDraftKey(activePosition) : "";
+                  const currentModes = stopModesRef.current;
+                  const next = currentModes.map((item, itemIndex) => (itemIndex === index ? value : item));
+                  const updatedModes = value.mode === "be"
+                    ? (() => {
+                        const nextModes = [...next];
+                        for (let itemIndex = 0; itemIndex <= index; itemIndex += 1) {
+                          nextModes[itemIndex] = { ...nextModes[itemIndex], mode: "be", pct: 0 };
+                        }
+                        const remaining = currentStopMode - (index + 1);
+                        for (let itemIndex = index + 1; itemIndex < currentStopMode; itemIndex += 1) {
+                          nextModes[itemIndex] = {
+                            ...nextModes[itemIndex],
+                            mode: "stop",
+                            pct: Number((((itemIndex - index) / Math.max(1, remaining)) * 100).toFixed(2)),
+                          };
+                        }
+                        return nextModes;
+                      })()
+                    : normalizeStopPcts(
+                        next,
+                        currentStopMode,
+                        index,
+                        Number(value.pct ?? defaultStopPcts(currentStopMode)[index] ?? 100)
+                      );
+                  const nextSelection = normalizeStopDraftSelection(currentStopMode, updatedModes);
+                  if (draftKey) {
+                    stopDraftsRef.current[draftKey] = nextSelection;
+                  }
+                  setStopModes(nextSelection.stopModes);
+                }}
                 onExecute={() => void executeStops()}
                 onMoveToBe={() => void moveToBe()}
                 onFlatten={() => void flatten()}
@@ -1160,6 +1228,7 @@ export function Cockpit() {
               <ProfitTakingPanel
                 setup={effectiveSetup}
                 activePosition={activePosition}
+                entrySide={activeEntrySide}
                 trancheCount={trancheCount}
                 trancheModes={trancheModes}
                 executeFlashing={Boolean(flashState.profit)}

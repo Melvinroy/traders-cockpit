@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
 from pathlib import Path
 
@@ -14,6 +16,7 @@ if auth_db_path.exists():
     auth_db_path.unlink()
 
 os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+os.environ["AUTH_STORAGE_MODE"] = "file"
 os.environ["AUTH_DB_PATH"] = str(auth_db_path)
 os.environ["AUTH_REQUIRE_LOGIN"] = "false"
 
@@ -31,9 +34,11 @@ from app.models.entities import (  # noqa: E402
     TradeLogEntity,
 )
 from app.schemas.cockpit import TrancheMode  # noqa: E402
-from app.services.auth import get_auth_store  # noqa: E402
+from app.services.auth import FAILED_LOGIN_LIMIT, get_auth_store  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
+from app.core.observability import REQUEST_ID_HEADER  # noqa: E402
 from app.api import deps_auth  # noqa: E402
+from app import main as main_module  # noqa: E402
 
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
@@ -95,6 +100,35 @@ def tranche_modes() -> list[dict]:
     ]
 
 
+def simple_entry_order(side: str = "buy", **overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "side": side,
+        "orderType": "limit",
+        "timeInForce": "day",
+        "orderClass": "simple",
+        "extendedHours": False,
+        "limitPrice": None,
+        "stopPrice": None,
+        "otoExitSide": "stop_loss",
+        "takeProfit": None,
+        "stopLoss": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def structured_events(caplog: pytest.LogCaptureFixture) -> list[dict]:
+    events: list[dict] = []
+    for record in caplog.records:
+        if record.name != "traders_cockpit":
+            continue
+        try:
+            events.append(json.loads(record.getMessage()))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
 def test_setup_endpoint_returns_contract() -> None:
     response = client.get("/api/setup/AAPL")
     assert response.status_code == 200
@@ -117,6 +151,80 @@ def test_setup_endpoint_returns_contract() -> None:
     if data["stopReferenceDefault"] != "manual":
         assert data["entry"] > data["finalStop"]
         assert data["shares"] >= 0
+
+
+def test_health_live_returns_liveness_contract() -> None:
+    response = client.get("/health/live")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["kind"] == "live"
+    assert "broker_mode" in payload
+
+
+def test_health_ready_returns_readiness_contract() -> None:
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["kind"] == "ready"
+    assert payload["runtime_contract"]["status"] == "ok"
+    assert "dependencies" in payload
+
+
+def test_health_ready_returns_503_when_readiness_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        main_module,
+        "build_readiness_report",
+        lambda settings: {
+            "status": "error",
+            "kind": "ready",
+            "app_env": settings.app_env,
+            "broker_mode": settings.broker_mode,
+            "runtime_contract": {
+                "status": "error",
+                "issues": ["forced readiness failure"],
+            },
+            "dependencies": {"auth": {"status": "error", "detail": "forced"}},
+        },
+    )
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "error"
+
+
+def test_request_id_header_is_generated_and_reused() -> None:
+    generated = client.get("/health")
+    assert generated.status_code == 200
+    generated_request_id = generated.headers.get(REQUEST_ID_HEADER)
+    assert generated_request_id
+
+    echoed = client.get("/health", headers={REQUEST_ID_HEADER: "req-health-123"})
+    assert echoed.status_code == 200
+    assert echoed.headers.get(REQUEST_ID_HEADER) == "req-health-123"
+
+
+def test_request_completion_logs_include_request_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+
+    response = client.get("/health", headers={REQUEST_ID_HEADER: "req-health-log-1"})
+
+    assert response.status_code == 200
+    events = structured_events(caplog)
+    request_event = next(
+        event for event in events if event.get("event") == "http.request.completed"
+    )
+    assert request_event["request_id"] == "req-health-log-1"
+    assert request_event["method"] == "GET"
+    assert request_event["path"] == "/health"
+    assert request_event["status"] == 200
+    assert isinstance(request_event["duration_ms"], float | int)
 
 
 def test_postgres_urls_normalize_to_psycopg_driver() -> None:
@@ -329,6 +437,61 @@ def test_login_creates_session_and_me_resolves_user() -> None:
     assert after.status_code == 401
 
 
+def test_auth_login_failure_logs_request_scoped_event(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+
+    response = client.post(
+        "/api/auth/login",
+        headers={REQUEST_ID_HEADER: "req-auth-fail-1"},
+        json={"username": "admin", "password": "wrong-password"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers.get(REQUEST_ID_HEADER) == "req-auth-fail-1"
+    events = structured_events(caplog)
+    login_failure = next(event for event in events if event.get("event") == "auth.login.failed")
+    assert login_failure["request_id"] == "req-auth-fail-1"
+    assert login_failure["username"] == "admin"
+    assert "password" not in json.dumps(login_failure)
+
+
+def test_login_rate_limits_repeated_failures() -> None:
+    for _ in range(FAILED_LOGIN_LIMIT):
+        failed = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "wrong-password"}
+        )
+        assert failed.status_code == 401
+
+    blocked = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "wrong-password"}
+    )
+    assert blocked.status_code == 429
+    assert "Too many login attempts" in blocked.json()["detail"]
+
+    success = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "change-me-admin"}
+    )
+    assert success.status_code == 429
+
+
+def test_successful_login_before_limit_clears_failures() -> None:
+    for _ in range(FAILED_LOGIN_LIMIT - 1):
+        failed = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "wrong-password"}
+        )
+        assert failed.status_code == 401
+
+    success = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "change-me-admin"}
+    )
+    assert success.status_code == 200
+
+    follow_up_failure = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "wrong-password"}
+    )
+    assert follow_up_failure.status_code == 401
+
+
 def test_staging_cookie_settings_can_support_hosted_preview() -> None:
     import app.api.routes_auth as routes_auth_module
 
@@ -367,6 +530,33 @@ def test_sensitive_routes_require_session_when_auth_is_enabled() -> None:
     finally:
         deps_auth.settings.auth_require_login = previous
         client.post("/api/auth/logout")
+
+
+def test_trade_preview_logs_request_scoped_event(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+
+    setup = client.get("/api/setup/AAPL").json()
+    response = client.post(
+        "/api/trade/preview",
+        headers={REQUEST_ID_HEADER: "req-preview-1"},
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "riskPct": 1,
+            "order": simple_entry_order(limitPrice=setup["entry"]),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get(REQUEST_ID_HEADER) == "req-preview-1"
+    events = structured_events(caplog)
+    preview_event = next(event for event in events if event.get("event") == "trade.preview")
+    assert preview_event["request_id"] == "req-preview-1"
+    assert preview_event["symbol"] == "AAPL"
+    assert preview_event["order_type"] == "limit"
+    assert preview_event["outcome"] == "success"
 
 
 def test_trade_lifecycle() -> None:
@@ -434,6 +624,257 @@ def test_trade_lifecycle() -> None:
         or order.get("parentId") == profit_state["rootOrderId"]
         for order in profit_state["orders"]
     )
+
+
+def test_paper_limit_entry_stays_pending_and_can_be_canceled() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    pending_limit = round((setup["entry"] + setup["finalStop"]) / 2, 2)
+
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+            "order": simple_entry_order(limitPrice=pending_limit),
+        },
+    )
+    assert enter.status_code == 200
+    position = enter.json()
+    assert position["phase"] == "entry_pending"
+    root_order = next(order for order in position["orders"] if order["tranche"] == "AAPL")
+    assert root_order["status"] == "PENDING"
+    assert root_order["cancelable"] is True
+    assert root_order["brokerOrderId"]
+
+    recent_orders = client.get("/api/orders")
+    assert recent_orders.status_code == 200
+    assert any(
+        order["brokerOrderId"] == root_order["brokerOrderId"] for order in recent_orders.json()
+    )
+
+    cancel = client.delete(f"/api/orders/{root_order['brokerOrderId']}")
+    assert cancel.status_code == 200
+    canceled_order = cancel.json()
+    assert canceled_order["status"] == "CANCELED"
+
+    positions = client.get("/api/positions")
+    assert positions.status_code == 200
+    closed_position = next(
+        position for position in positions.json() if position["symbol"] == "AAPL"
+    )
+    assert closed_position["phase"] == "closed"
+
+
+def test_preview_trade_supports_sell_side_and_rejects_invalid_short_stop() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    short_stop = round(max(setup["hod"], setup["entry"] + 1), 2)
+
+    preview = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": short_stop,
+            "riskPct": 0.2,
+            "order": simple_entry_order("sell", timeInForce="gtc", limitPrice=setup["entry"]),
+        },
+    )
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["perShareRisk"] == round(short_stop - setup["entry"], 2)
+    assert payload["shares"] > 0
+
+    invalid = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 0.2,
+            "order": simple_entry_order("sell", limitPrice=setup["entry"]),
+        },
+    )
+    assert invalid.status_code == 400
+    assert "above entry for short positions" in invalid.text
+
+
+def test_short_trade_uses_buy_to_cover_for_stops_and_profit_orders() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    short_stop = round(max(setup["hod"], setup["entry"] + 1), 2)
+
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": short_stop,
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+            "order": simple_entry_order("sell", limitPrice=setup["entry"]),
+        },
+    )
+    assert enter.status_code == 200
+    position = enter.json()
+    assert position["phase"] == "trade_entered"
+    root_order = next(
+        order for order in position["orders"] if order["id"] == position["rootOrderId"]
+    )
+    assert root_order["side"] == "SELL"
+
+    stops = client.post(
+        "/api/trade/stops",
+        json={
+            "symbol": "AAPL",
+            "stopMode": 3,
+            "stopModes": [
+                {"mode": "stop", "pct": 33.0},
+                {"mode": "stop", "pct": 66.0},
+                {"mode": "stop", "pct": 100.0},
+            ],
+        },
+    )
+    assert stops.status_code == 200
+    protected = stops.json()
+    stop_orders = [order for order in protected["orders"] if order["type"] == "STOP"]
+    assert len(stop_orders) == 3
+    assert all(order["side"] == "BUY" for order in stop_orders)
+    assert all(order["price"] > protected["setup"]["entry"] for order in stop_orders)
+
+    profit = client.post(
+        "/api/trade/profit",
+        json={"symbol": "AAPL", "trancheModes": tranche_modes()},
+    )
+    assert profit.status_code == 200
+    profit_state = profit.json()
+    filled_limits = [
+        order
+        for order in profit_state["orders"]
+        if order["type"] == "LMT" and order.get("parentId") == profit_state["rootOrderId"]
+    ]
+    assert filled_limits
+    assert all(order["side"] == "BUY" for order in filled_limits)
+
+
+def test_preview_rejects_stop_ioc_combo() -> None:
+    setup = client.get("/api/setup/AAPL").json()
+
+    response = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 1,
+            "order": simple_entry_order(
+                orderType="stop",
+                timeInForce="ioc",
+                stopPrice=round(setup["entry"] + 1, 2),
+                limitPrice=None,
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "STOP orders do not support IOC time-in-force." in response.text
+
+
+def test_preview_rejects_bracket_with_invalid_tif() -> None:
+    setup = client.get("/api/setup/AAPL").json()
+
+    response = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 1,
+            "order": simple_entry_order(
+                orderType="market",
+                timeInForce="fok",
+                orderClass="bracket",
+                limitPrice=None,
+                takeProfit={"limitPrice": round(setup["entry"] + 1, 2)},
+                stopLoss={"stopPrice": round(setup["entry"] - 1, 2), "limitPrice": None},
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Attached exit orders require DAY or GTC time-in-force." in response.text
+
+
+def test_preview_rejects_extended_hours_non_simple_limit() -> None:
+    setup = client.get("/api/setup/AAPL").json()
+
+    response = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 1,
+            "order": simple_entry_order(
+                orderType="limit",
+                timeInForce="day",
+                orderClass="bracket",
+                extendedHours=True,
+                limitPrice=setup["entry"],
+                takeProfit={"limitPrice": round(setup["entry"] + 1, 2)},
+                stopLoss={"stopPrice": round(setup["entry"] - 1, 2), "limitPrice": None},
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Extended-hours is only available for simple limit entries." in response.text
+
+
+def test_preview_rejects_oco_entry_order_class() -> None:
+    setup = client.get("/api/setup/AAPL").json()
+
+    response = client.post(
+        "/api/trade/preview",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "manual",
+            "stopPrice": round(setup["entry"] - 1, 2),
+            "riskPct": 1,
+            "order": simple_entry_order(
+                orderType="limit",
+                timeInForce="day",
+                orderClass="oco",
+                limitPrice=setup["entry"],
+                takeProfit={"limitPrice": round(setup["entry"] + 1, 2)},
+                stopLoss={"stopPrice": round(setup["entry"] - 1, 2), "limitPrice": None},
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "exit-only Alpaca order class" in response.text
 
 
 def test_three_stop_mode_defaults_to_33_33_34_when_pct_is_blank() -> None:
@@ -885,6 +1326,71 @@ def test_recent_orders_merge_broker_state_and_cancel() -> None:
             assert local.status == "CANCELED"
     finally:
         service.broker.list_recent_orders = original_list_recent_orders
+        service.broker.get_order = original_get_order
+        service.broker.cancel_order = original_cancel_order
+
+
+def test_cancel_recent_order_logs_request_scoped_event(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with SessionLocal() as db:
+        db.add(
+            OrderEntity(
+                order_id="ORD-9201",
+                broker_order_id="broker-log-1",
+                symbol="AAPL",
+                type="LMT",
+                qty=10,
+                orig_qty=10,
+                price=101.25,
+                status="PENDING",
+                tranche_label="AAPL",
+                covered_tranches=[],
+                parent_id=None,
+            )
+        )
+        db.commit()
+
+    caplog.set_level(logging.INFO, logger="traders_cockpit")
+    original_get_order = service.broker.get_order
+    original_cancel_order = service.broker.cancel_order
+
+    def fake_get_order(broker_order_id: str):
+        if broker_order_id != "broker-log-1":
+            return None
+        return {
+            "id": "broker-log-1",
+            "client_order_id": "client-log-1",
+            "symbol": "AAPL",
+            "side": "buy",
+            "type": "limit",
+            "qty": "10",
+            "filled_qty": "0",
+            "limit_price": "101.25",
+            "status": "accepted",
+            "created_at": "2026-03-22T10:00:00Z",
+            "updated_at": "2026-03-22T10:00:05Z",
+        }
+
+    def fake_cancel_order(_broker_order_id: str):
+        return None
+
+    service.broker.get_order = fake_get_order
+    service.broker.cancel_order = fake_cancel_order
+    try:
+        response = client.delete(
+            "/api/orders/broker-log-1",
+            headers={REQUEST_ID_HEADER: "req-cancel-1"},
+        )
+        assert response.status_code == 200
+        assert response.headers.get(REQUEST_ID_HEADER) == "req-cancel-1"
+        events = structured_events(caplog)
+        cancel_event = next(event for event in events if event.get("event") == "orders.cancel")
+        assert cancel_event["request_id"] == "req-cancel-1"
+        assert cancel_event["broker_order_id"] == "broker-log-1"
+        assert cancel_event["symbol"] == "AAPL"
+        assert cancel_event["outcome"] == "success"
+    finally:
         service.broker.get_order = original_get_order
         service.broker.cancel_order = original_cancel_order
 
