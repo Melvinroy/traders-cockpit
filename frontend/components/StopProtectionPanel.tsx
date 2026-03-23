@@ -11,6 +11,8 @@ type Props = {
   executeFlashing?: boolean;
   moveToBeFlashing?: boolean;
   flattenFlashing?: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   onStopModeChange: (value: number) => void;
   onStopModeValueChange: (index: number, value: StopMode) => void;
   onExecute: () => void;
@@ -29,6 +31,8 @@ export function StopProtectionPanel(props: Props) {
     executeFlashing = false,
     moveToBeFlashing = false,
     flattenFlashing = false,
+    collapsed = false,
+    onToggleCollapse,
     onStopModeChange,
     onStopModeValueChange,
     onExecute,
@@ -52,9 +56,12 @@ export function StopProtectionPanel(props: Props) {
           : "S1\u00B7S2\u00B7S3";
 
   return (
-    <div className="panel protect-panel">
+    <div className={`panel protect-panel ${collapsed ? "panel-collapsed" : ""}`}>
       <div className="panel-header protect-header">
-        <div className="panel-title">Stop Protection</div>
+        <div className="panel-title-row">
+          <button type="button" className="panel-collapse-btn" onClick={onToggleCollapse}>{collapsed ? "+" : "-"}</button>
+          <div className="panel-title">Stop Protection</div>
+        </div>
         <div className="protect-controls">
           <span className="protect-caption">STOPS</span>
           <button type="button" className={`tranche-count-btn ${stopMode === 1 ? "active" : ""}`} disabled={!hasTrade || waitingForFill} onClick={() => onStopModeChange(1)}>S1</button>
@@ -64,9 +71,10 @@ export function StopProtectionPanel(props: Props) {
           <div className="stop-mode-label">{stopModeLabel}</div>
         </div>
       </div>
+      {!collapsed ? <>
       <div className="stop-plan-shell">
         <div className="section-label stop-plan-title">
-          Stop Plan <span className="section-hint">{waitingForFill ? "\u2014 Protective orders are unavailable until the entry order is filled" : hasTrade ? "" : hasSetup ? "\u2014 Enter trade first" : ""}</span>
+          Stop Plan <span className="section-hint">{waitingForFill ? "— Protective orders are unavailable until the entry order is filled" : hasTrade ? "" : hasSetup ? "— Enter trade first" : ""}</span>
         </div>
         <div className="stop-plan-content">
           {!hasSetup ? null : rows.map((row, index) => {
@@ -112,12 +120,21 @@ export function StopProtectionPanel(props: Props) {
               </div>
             );
           })}
+          {hasSetup ? (
+            <div className="plan-line stop-action-line">
+              <span className="plan-line-label">ACT</span>
+              <div className="stop-action-buttons">
+                <button type="button" className={`btn btn-ghost stop-inline-btn ${moveToBeFlashing ? "flash" : ""}`} disabled={!hasTrade || waitingForFill} onClick={onMoveToBe}>ALL {"\u2192"} BE</button>
+                <button type="button" className={`btn btn-red stop-inline-btn ${flattenFlashing ? "flash" : ""}`} disabled={!hasTrade} onClick={onFlatten}>{"\u2B1B"} FLATTEN</button>
+              </div>
+              <span className="stop-action-copy">
+                {waitingForFill ? "Awaiting broker fill" : hasTrade ? "Stop actions ready" : "No live trade"}
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
-      <div className="panel-body protect-actions">
-        <button type="button" className={`btn btn-ghost ${moveToBeFlashing ? "flash" : ""}`} disabled={!hasTrade || waitingForFill} onClick={onMoveToBe}>ALL {"\u2192"} BE</button>
-        <button type="button" className={`btn btn-red ${flattenFlashing ? "flash" : ""}`} disabled={!hasTrade} onClick={onFlatten}>{"\u2B1B"} FLATTEN</button>
-      </div>
+      </> : null}
     </div>
   );
 }

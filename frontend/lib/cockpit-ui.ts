@@ -58,15 +58,111 @@ export function phaseLabel(phase: string): string {
   return PHASE_LABELS[phase] ?? phase.replaceAll("_", " ").toUpperCase();
 }
 
-export function splitShares(total: number, count: number): number[] {
-  if (count <= 1) return [total];
-  if (count === 2) {
-    const first = Math.floor(total / 2);
-    return [first, total - first];
+export function defaultAllocationPcts(count: number): number[] {
+  if (count <= 1) return [100];
+  const even = Math.floor((100 / count) * 100) / 100;
+  const allocations = Array.from({ length: count }, () => even);
+  allocations[count - 1] = Number((100 - even * (count - 1)).toFixed(2));
+  return allocations;
+}
+
+export function normalizeAllocationPcts(
+  values: Array<number | null | undefined>,
+  changedIndex: number,
+  count: number
+): number[] {
+  const next = defaultAllocationPcts(count);
+  const clampedChanged = Math.max(0, Math.min(100, Number(values[changedIndex] ?? next[changedIndex])));
+  next[changedIndex] = Number(clampedChanged.toFixed(2));
+  const otherIndexes = Array.from({ length: count }, (_, index) => index).filter((index) => index !== changedIndex);
+  if (otherIndexes.length === 0) return [100];
+  const remaining = Math.max(0, Number((100 - next[changedIndex]).toFixed(2)));
+  const originalOtherTotal = otherIndexes.reduce((sum, index) => sum + Math.max(0, Number(values[index] ?? next[index])), 0);
+  if (originalOtherTotal <= 0) {
+    const even = Number((remaining / otherIndexes.length).toFixed(2));
+    otherIndexes.forEach((index, itemIndex) => {
+      next[index] = itemIndex === otherIndexes.length - 1
+        ? Number((remaining - even * (otherIndexes.length - 1)).toFixed(2))
+        : even;
+    });
+  } else {
+    let assigned = 0;
+    otherIndexes.forEach((index, itemIndex) => {
+      if (itemIndex === otherIndexes.length - 1) {
+        next[index] = Number((remaining - assigned).toFixed(2));
+        return;
+      }
+      const proportional = Number((((Math.max(0, Number(values[index] ?? 0)) / originalOtherTotal) * remaining)).toFixed(2));
+      next[index] = proportional;
+      assigned = Number((assigned + proportional).toFixed(2));
+    });
   }
-  const first = Math.floor(total * 0.33);
-  const second = Math.floor(total * 0.33);
-  return [first, second, total - first - second];
+  return next;
+}
+
+export function splitShares(total: number, count: number, allocationPcts?: Array<number | null | undefined>): number[] {
+  if (count <= 1) return [total];
+  if (!total) return Array.from({ length: count }, () => 0);
+  const allocations = allocationPcts && allocationPcts.length >= count
+    ? allocationPcts.slice(0, count).map((value, index) => value ?? defaultAllocationPcts(count)[index])
+    : defaultAllocationPcts(count);
+  const raw = allocations.map((allocation) => (total * allocation) / 100);
+  const assigned = raw.map((value) => Math.floor(value));
+  let remaining = total - assigned.reduce((sum, value) => sum + value, 0);
+  const remainders = raw
+    .map((value, index) => ({ index, remainder: value - assigned[index] }))
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+  for (const item of remainders) {
+    if (remaining <= 0) break;
+    assigned[item.index] += 1;
+    remaining -= 1;
+  }
+  return assigned;
+}
+
+export function defaultStopPcts(stopMode: number): number[] {
+  if (stopMode <= 1) return [100];
+  return Array.from({ length: stopMode }, (_, index) =>
+    Number((((index + 1) / stopMode) * 100).toFixed(2))
+  );
+}
+
+export function normalizeStopPcts(
+  stopModes: StopMode[],
+  stopMode: number,
+  changedIndex: number,
+  nextPct: number
+): StopMode[] {
+  const current = stopModes.slice(0, stopMode).map((mode, index) => ({
+    mode: mode.mode,
+    pct: mode.mode === "be" ? 0 : mode.pct ?? defaultStopPcts(stopMode)[index],
+  }));
+  const normalizedDefaults = defaultStopPcts(stopMode);
+  const lowerAnchor = changedIndex === 0 ? 0 : (current[changedIndex - 1]?.mode === "be" ? 0 : Number(current[changedIndex - 1]?.pct ?? normalizedDefaults[changedIndex - 1]));
+  const upperAnchor = changedIndex === stopMode - 1 ? 100 : (current[changedIndex + 1]?.mode === "be" ? normalizedDefaults[changedIndex + 1] : Number(current[changedIndex + 1]?.pct ?? normalizedDefaults[changedIndex + 1]));
+  const clamped = Math.max(lowerAnchor, Math.min(upperAnchor, nextPct));
+  current[changedIndex] = { ...current[changedIndex], pct: Number(clamped.toFixed(2)) };
+
+  let previous = 0;
+  for (let index = 0; index < stopMode; index += 1) {
+    if (current[index].mode === "be") {
+      current[index].pct = 0;
+      continue;
+    }
+    if (index < changedIndex) {
+      const slots = changedIndex - index + 1;
+      current[index].pct = Number((previous + (clamped - previous) / slots).toFixed(2));
+    } else if (index > changedIndex) {
+      const nextSlots = stopMode - changedIndex;
+      current[index].pct = Number((clamped + ((100 - clamped) * (index - changedIndex)) / nextSlots).toFixed(2));
+    }
+    previous = Number(current[index].pct ?? 0);
+  }
+
+  return stopModes.map((mode, index) => {
+    if (index >= stopMode) return mode;
+    return current[index];
+  });
 }
 
 export function targetPrice(setup: SetupResponse, mode: TrancheMode): number | null {
@@ -135,7 +231,11 @@ export function stopPlanRows(
   }
   const previewTranches = tranches.length
     ? tranches
-    : splitShares(setup.shares, modeCount).map((qty, index) => ({
+    : splitShares(
+        setup.shares,
+        modeCount,
+        defaultAllocationPcts(modeCount)
+      ).map((qty, index) => ({
         id: `T${index + 1}`,
         qty,
         stop: setup.finalStop,
@@ -182,4 +282,71 @@ export function soldShares(position: PositionView): number {
   return position.tranches
     .filter((tranche) => tranche.status === "sold")
     .reduce((sum, tranche) => sum + tranche.qty, 0);
+}
+
+export type RunningPnlSummary = {
+  totalShares: number;
+  closedShares: number;
+  remainingShares: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  openRisk: number;
+  filledLegs: Array<{
+    label: string;
+    qty: number;
+    exitPrice: number | null;
+    pnl: number;
+    filledAt: string | null;
+  }>;
+};
+
+export function runningPnlSummary(position: PositionView | null, setup: SetupResponse | null): RunningPnlSummary | null {
+  if (!position || !setup || position.phase === "entry_pending") return null;
+  const entry = setup.entry;
+  const totalShares = position.tranches.reduce((sum, tranche) => sum + tranche.qty, 0);
+  const activeTranches = position.tranches.filter((tranche) => tranche.status === "active");
+  const closedTranches = position.tranches.filter((tranche) => tranche.status === "sold");
+  const remainingShares = activeTranches.reduce((sum, tranche) => sum + tranche.qty, 0);
+  const closedShares = closedTranches.reduce((sum, tranche) => sum + tranche.qty, 0);
+
+  const filledLegs = closedTranches.map((tranche) => {
+    const fillOrder = [...position.orders]
+      .filter((order) => order.status === "FILLED" && (order.tranche === tranche.id || order.coveredTranches.includes(tranche.id)))
+      .sort((left, right) => {
+        const leftTime = left.filledAt ?? left.updatedAt ?? left.createdAt ?? "";
+        const rightTime = right.filledAt ?? right.updatedAt ?? right.createdAt ?? "";
+        return rightTime.localeCompare(leftTime);
+      })[0];
+    const exitPrice = tranche.exitPrice ?? fillOrder?.fillPrice ?? tranche.target ?? null;
+    const pnl = exitPrice !== null ? Number(((exitPrice - entry) * tranche.qty).toFixed(2)) : 0;
+    const exitOrderType = tranche.exitOrderType ?? fillOrder?.type ?? null;
+    const label = exitOrderType === "STOP"
+      ? `Stop hit · ${tranche.id}`
+      : exitOrderType === "TRAIL"
+        ? `Runner exit · ${tranche.id}`
+        : `${tranche.id} filled`;
+    return {
+      label,
+      qty: tranche.qty,
+      exitPrice,
+      pnl,
+      filledAt: tranche.exitFilledAt ?? fillOrder?.filledAt ?? fillOrder?.updatedAt ?? fillOrder?.createdAt ?? null,
+    };
+  });
+
+  const realizedPnl = Number(filledLegs.reduce((sum, leg) => sum + leg.pnl, 0).toFixed(2));
+  const unrealizedPnl = Number(((position.livePrice - entry) * remainingShares).toFixed(2));
+  const openRisk = Number(
+    activeTranches.reduce((sum, tranche) => sum + Math.max(0, (entry - tranche.stop) * tranche.qty), 0).toFixed(2)
+  );
+
+  return {
+    totalShares,
+    closedShares,
+    remainingShares,
+    realizedPnl,
+    unrealizedPnl,
+    openRisk,
+    filledLegs,
+  };
 }

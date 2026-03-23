@@ -11,8 +11,36 @@ class StopMode(BaseModel):
     pct: float | None = None
 
 
+EntryOrderType = Literal["market", "limit", "stop", "stop_limit"]
+TimeInForce = Literal["day", "gtc", "ioc", "fok", "opg", "cls"]
+OrderClass = Literal["simple", "bracket", "oco", "oto"]
+OtoExitSide = Literal["stop_loss", "take_profit"]
+
+
+class TakeProfitDraft(BaseModel):
+    limitPrice: float | None = None
+
+
+class StopLossDraft(BaseModel):
+    stopPrice: float | None = None
+    limitPrice: float | None = None
+
+
+class EntryOrderDraft(BaseModel):
+    orderType: EntryOrderType = "limit"
+    timeInForce: TimeInForce = "day"
+    orderClass: OrderClass = "simple"
+    extendedHours: bool = False
+    limitPrice: float | None = None
+    stopPrice: float | None = None
+    otoExitSide: OtoExitSide = "stop_loss"
+    takeProfit: TakeProfitDraft | None = None
+    stopLoss: StopLossDraft | None = None
+
+
 class TrancheMode(BaseModel):
     mode: Literal["limit", "runner"] = "limit"
+    allocationPct: float | None = None
     trail: float = 2.0
     trailUnit: Literal["$", "%"] = "$"
     target: Literal["1R", "2R", "3R", "Manual"] = "1R"
@@ -25,6 +53,9 @@ class Tranche(BaseModel):
     stop: float
     target: float | None = None
     status: Literal["active", "sold", "canceled"] = "active"
+    exitPrice: float | None = None
+    exitFilledAt: datetime | None = None
+    exitOrderType: str | None = None
     mode: Literal["limit", "runner"] = "limit"
     trail: float = 2.0
     trailUnit: Literal["$", "%"] = "$"
@@ -34,16 +65,22 @@ class Tranche(BaseModel):
 
 class OrderView(BaseModel):
     id: str
+    symbol: str
+    side: str | None = None
     type: str
     qty: int
     origQty: int
+    filledQty: int = 0
+    remainingQty: int = 0
     price: float
     status: str
     tranche: str
     coveredTranches: list[str] = Field(default_factory=list)
     parentId: str | None = None
     brokerOrderId: str | None = None
+    cancelable: bool = False
     createdAt: datetime | None = None
+    updatedAt: datetime | None = None
     filledAt: datetime | None = None
     fillPrice: float | None = None
 
@@ -86,7 +123,12 @@ class SetupResponse(BaseModel):
     )
     quoteState: Literal["live_quote", "cached_quote", "quote_unavailable"] = "quote_unavailable"
     entryBasis: str = "midpoint"
-    stopReferenceDefault: str = "lod"
+    stopReferenceDefault: Literal["lod", "atr", "manual"] = "lod"
+    lodIsValid: bool = True
+    atrIsValid: bool = True
+    lodStop: float
+    atrStop: float
+    manualStopWarning: str | None = None
     bid: float
     ask: float
     last: float
@@ -110,8 +152,26 @@ class SetupResponse(BaseModel):
     perShareRisk: float
     riskPct: float
     accountEquity: float
+    accountBuyingPower: float
+    accountCash: float | None = None
+    equitySource: str = "local_settings"
+    sizingWarning: str | None = None
+    buyingPowerNote: str | None = None
     atrExtension: float
     extFrom10Ma: float
+
+
+class TradePreviewResponse(BaseModel):
+    symbol: str
+    entry: float
+    finalStop: float
+    perShareRisk: float
+    shares: int
+    dollarRisk: float
+    sizingWarning: str | None = None
+    orderType: EntryOrderType = "limit"
+    timeInForce: TimeInForce = "day"
+    orderClass: OrderClass = "simple"
 
 
 class TradePreviewRequest(BaseModel):
@@ -120,6 +180,7 @@ class TradePreviewRequest(BaseModel):
     stopRef: Literal["lod", "atr", "manual"] = "lod"
     stopPrice: float
     riskPct: float
+    order: EntryOrderDraft = Field(default_factory=EntryOrderDraft)
 
 
 class TradeEnterRequest(BaseModel):
@@ -130,6 +191,7 @@ class TradeEnterRequest(BaseModel):
     trancheCount: int = 3
     trancheModes: list[TrancheMode]
     offHoursMode: Literal["queue_for_open", "extended_hours_limit"] | None = None
+    order: EntryOrderDraft = Field(default_factory=EntryOrderDraft)
 
 
 class StopsRequest(BaseModel):
@@ -150,9 +212,11 @@ class MoveToBeRequest(BaseModel):
 class AccountSettingsView(BaseModel):
     equity: float
     buying_power: float
+    cash: float | None = None
     risk_pct: float
     mode: str
     effective_mode: str
+    equity_source: str = "local_settings"
     daily_realized_pnl: float
     allow_live_trading: bool
     max_position_notional_pct: float

@@ -24,7 +24,13 @@ from app.adapters.market_data import SetupMarketData  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app, service  # noqa: E402
-from app.models.entities import OrderEntity, PositionEntity, TradeLogEntity  # noqa: E402
+from app.models.entities import (  # noqa: E402
+    AccountSettingsEntity,
+    OrderEntity,
+    PositionEntity,
+    TradeLogEntity,
+)
+from app.schemas.cockpit import TrancheMode  # noqa: E402
 from app.services.auth import get_auth_store  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
 from app.api import deps_auth  # noqa: E402
@@ -62,9 +68,30 @@ def reset_db() -> None:
 
 def tranche_modes() -> list[dict]:
     return [
-        {"mode": "limit", "trail": 2, "trailUnit": "$", "target": "1R", "manualPrice": None},
-        {"mode": "limit", "trail": 2, "trailUnit": "$", "target": "2R", "manualPrice": None},
-        {"mode": "runner", "trail": 2, "trailUnit": "$", "target": "3R", "manualPrice": None},
+        {
+            "mode": "limit",
+            "allocationPct": 33.33,
+            "trail": 2,
+            "trailUnit": "$",
+            "target": "1R",
+            "manualPrice": None,
+        },
+        {
+            "mode": "limit",
+            "allocationPct": 33.33,
+            "trail": 2,
+            "trailUnit": "$",
+            "target": "2R",
+            "manualPrice": None,
+        },
+        {
+            "mode": "runner",
+            "allocationPct": 33.34,
+            "trail": 2,
+            "trailUnit": "$",
+            "target": "3R",
+            "manualPrice": None,
+        },
     ]
 
 
@@ -83,8 +110,13 @@ def test_setup_endpoint_returns_contract() -> None:
     assert isinstance(data["quoteIsReal"], bool)
     assert isinstance(data["technicalsAreFallback"], bool)
     assert data["entryBasis"] == "bid_ask_midpoint"
-    assert data["entry"] > data["finalStop"]
-    assert data["shares"] > 0
+    assert data["stopReferenceDefault"] in {"lod", "atr", "manual"}
+    assert isinstance(data["lodIsValid"], bool)
+    assert isinstance(data["atrIsValid"], bool)
+    assert "equitySource" in data
+    if data["stopReferenceDefault"] != "manual":
+        assert data["entry"] > data["finalStop"]
+        assert data["shares"] >= 0
 
 
 def test_postgres_urls_normalize_to_psycopg_driver() -> None:
@@ -141,6 +173,138 @@ def test_setup_fails_loudly_when_real_quote_is_unavailable() -> None:
     finally:
         service.settings.allow_controller_mock = original_allow_mock
         service.market_data.get_setup_data = original_get_setup_data
+
+
+def test_build_setup_defaults_to_manual_when_real_lod_is_invalid() -> None:
+    market = SetupMarketData(
+        symbol="AAPL",
+        provider="alpaca_market",
+        provider_state="real_quote_range_atr_fallback_technicals",
+        quote_provider="alpaca",
+        technicals_provider="mock",
+        quote_is_real=True,
+        technicals_are_fallback=True,
+        fallback_reason="partial_technicals_fallback_only",
+        quote_timestamp=None,
+        session_state="after_hours",
+        quote_state="cached_quote",
+        entry_basis="bid_ask_midpoint",
+        bid=101.00,
+        ask=101.20,
+        last=101.10,
+        lod=101.50,
+        hod=103.00,
+        prev_close=100.00,
+        atr14=2.25,
+        sma10=100.0,
+        sma50=95.0,
+        sma200=90.0,
+        sma200_prev=89.5,
+        rvol=1.2,
+        days_to_cover=2.0,
+    )
+    setup = service._build_setup_response(market, 50000.0, 200000.0, 1.0, "alpaca_account", 15000.0)
+    assert setup.stopReferenceDefault == "manual"
+    assert setup.lodIsValid is False
+    assert setup.manualStopWarning
+    assert setup.shares == 0
+    assert setup.finalStop == 0.0
+
+
+def test_build_setup_uses_real_lod_when_valid() -> None:
+    market = SetupMarketData(
+        symbol="AAPL",
+        provider="alpaca_market",
+        provider_state="real_quote_range_atr_fallback_technicals",
+        quote_provider="alpaca",
+        technicals_provider="mock",
+        quote_is_real=True,
+        technicals_are_fallback=True,
+        fallback_reason="partial_technicals_fallback_only",
+        quote_timestamp=None,
+        session_state="regular_open",
+        quote_state="live_quote",
+        entry_basis="bid_ask_midpoint",
+        bid=101.00,
+        ask=101.20,
+        last=101.10,
+        lod=98.00,
+        hod=103.00,
+        prev_close=100.00,
+        atr14=2.25,
+        sma10=100.0,
+        sma50=95.0,
+        sma200=90.0,
+        sma200_prev=89.5,
+        rvol=1.2,
+        days_to_cover=2.0,
+    )
+    setup = service._build_setup_response(market, 50000.0, 200000.0, 1.0, "alpaca_account", 15000.0)
+    assert setup.stopReferenceDefault == "lod"
+    assert setup.lodIsValid is True
+    assert setup.finalStop == 98.0
+    assert setup.atrStop == round(setup.entry - market.atr14, 2)
+    assert setup.shares > 0
+
+
+def test_get_account_uses_broker_equity_for_alpaca_paper_mode() -> None:
+    original_broker = service.broker
+    original_mode = service.settings.broker_mode
+
+    class StubBroker:
+        def get_account_summary(self) -> dict[str, float]:
+            return {"equity": 76543.21, "buying_power": 123456.78, "cash": 10000.0}
+
+    service.broker = StubBroker()
+    service.settings.broker_mode = "alpaca_paper"
+    try:
+        with SessionLocal() as db:
+            service.ensure_seed_data(db)
+            settings_row = db.scalar(select(AccountSettingsEntity))
+            assert settings_row is not None
+            settings_row.mode = "alpaca_paper"
+            db.commit()
+            account = service.get_account(db)
+        assert account.equity == 76543.21
+        assert account.buying_power == 123456.78
+        assert account.cash == 10000.0
+        assert account.equity_source == "alpaca_account"
+    finally:
+        service.broker = original_broker
+        service.settings.broker_mode = original_mode
+
+
+def test_split_shares_uses_allocation_percentages() -> None:
+    allocations = [
+        {
+            "mode": "limit",
+            "allocationPct": 50.0,
+            "trail": 2,
+            "trailUnit": "$",
+            "target": "1R",
+            "manualPrice": None,
+        },
+        {
+            "mode": "limit",
+            "allocationPct": 30.0,
+            "trail": 2,
+            "trailUnit": "$",
+            "target": "2R",
+            "manualPrice": None,
+        },
+        {
+            "mode": "runner",
+            "allocationPct": 20.0,
+            "trail": 2,
+            "trailUnit": "$",
+            "target": "3R",
+            "manualPrice": None,
+        },
+    ]
+    result = service._split_shares(
+        101, 3, [TrancheMode.model_validate(item) for item in allocations]
+    )
+    assert result == [51, 30, 20]
 
 
 def test_login_creates_session_and_me_resolves_user() -> None:
@@ -493,6 +657,76 @@ def test_off_hours_queue_for_open_creates_pending_entry() -> None:
         service.get_setup = original_get_setup
 
 
+def test_stop_fill_reconciles_realized_loss_for_only_hit_tranche() -> None:
+    client.put(
+        "/api/account/settings",
+        json={"equity": 1000000, "risk_pct": 0.2, "mode": "paper"},
+    )
+    setup = client.get("/api/setup/AAPL").json()
+    enter = client.post(
+        "/api/trade/enter",
+        json={
+            "symbol": "AAPL",
+            "entry": setup["entry"],
+            "stopRef": "lod",
+            "stopPrice": setup["finalStop"],
+            "trancheCount": 3,
+            "trancheModes": tranche_modes(),
+        },
+    )
+    assert enter.status_code == 200
+
+    stops = client.post(
+        "/api/trade/stops",
+        json={
+            "symbol": "AAPL",
+            "stopMode": 3,
+            "stopModes": [
+                {"mode": "stop", "pct": 33.0},
+                {"mode": "stop", "pct": 66.0},
+                {"mode": "stop", "pct": 100.0},
+            ],
+        },
+    )
+    assert stops.status_code == 200
+    protected = stops.json()
+    s1 = next(
+        order
+        for order in protected["orders"]
+        if order["type"] == "STOP" and order["tranche"] == "S1"
+    )
+    s2 = next(
+        order
+        for order in protected["orders"]
+        if order["type"] == "STOP" and order["tranche"] == "S2"
+    )
+    assert s1["price"] > s2["price"]
+
+    with SessionLocal() as db:
+        position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == "AAPL"))
+        assert position is not None
+        position.live_price = round((s1["price"] + s2["price"]) / 2, 2)
+        db.commit()
+
+    reconciled = client.get("/api/positions/AAPL")
+    assert reconciled.status_code == 200
+    payload = reconciled.json()
+    sold = [tranche for tranche in payload["tranches"] if tranche["status"] == "sold"]
+    active = [tranche for tranche in payload["tranches"] if tranche["status"] == "active"]
+    assert len(sold) == 1
+    assert len(active) == 2
+    assert sold[0]["exitOrderType"] == "STOP"
+    assert sold[0]["exitPrice"] == s1["price"]
+    assert sold[0]["exitFilledAt"] is not None
+    filled_stop_orders = [
+        order
+        for order in payload["orders"]
+        if order["type"] == "STOP" and order["status"] == "FILLED"
+    ]
+    assert len(filled_stop_orders) == 1
+    assert filled_stop_orders[0]["tranche"] == "S1"
+
+
 def test_setup_uses_cached_quote_metadata_when_alpaca_quote_is_off_hours() -> None:
     original_market_data = service.market_data.get_setup_data
 
@@ -510,6 +744,7 @@ def test_setup_uses_cached_quote_metadata_when_alpaca_quote_is_off_hours() -> No
             quote_timestamp=fallback.quote_timestamp,
             session_state="closed",
             quote_state="cached_quote",
+            entry_basis=fallback.entry_basis,
             bid=fallback.bid,
             ask=fallback.ask,
             last=fallback.last,
@@ -535,3 +770,230 @@ def test_setup_uses_cached_quote_metadata_when_alpaca_quote_is_off_hours() -> No
         assert data["quoteState"] == "cached_quote"
     finally:
         service.market_data.get_setup_data = original_market_data
+
+
+def test_recent_orders_merge_broker_state_and_cancel() -> None:
+    with SessionLocal() as db:
+        db.add(
+            OrderEntity(
+                order_id="ORD-9001",
+                broker_order_id="broker-1",
+                symbol="AAPL",
+                type="LMT",
+                qty=10,
+                orig_qty=10,
+                price=101.25,
+                status="PENDING",
+                tranche_label="AAPL",
+                covered_tranches=[],
+                parent_id=None,
+            )
+        )
+        db.commit()
+
+    canceled: list[str] = []
+    original_list_recent_orders = service.broker.list_recent_orders
+    original_get_order = service.broker.get_order
+    original_cancel_order = service.broker.cancel_order
+
+    def fake_list_recent_orders(limit: int = 50):
+        return [
+            {
+                "id": "broker-1",
+                "client_order_id": "client-1",
+                "symbol": "AAPL",
+                "side": "buy",
+                "type": "limit",
+                "qty": "10",
+                "filled_qty": "0",
+                "limit_price": "101.25",
+                "status": "accepted",
+                "created_at": "2026-03-22T10:00:00Z",
+                "updated_at": "2026-03-22T10:00:05Z",
+            },
+            {
+                "id": "broker-2",
+                "client_order_id": "client-2",
+                "symbol": "MSFT",
+                "side": "sell",
+                "type": "market",
+                "qty": "5",
+                "filled_qty": "5",
+                "filled_avg_price": "380.10",
+                "status": "filled",
+                "created_at": "2026-03-22T09:59:00Z",
+                "updated_at": "2026-03-22T09:59:10Z",
+                "filled_at": "2026-03-22T09:59:10Z",
+            },
+        ][:limit]
+
+    def fake_get_order(broker_order_id: str):
+        if broker_order_id == "broker-1" and "broker-1" not in canceled:
+            return {
+                "id": "broker-1",
+                "client_order_id": "client-1",
+                "symbol": "AAPL",
+                "side": "buy",
+                "type": "limit",
+                "qty": "10",
+                "filled_qty": "0",
+                "limit_price": "101.25",
+                "status": "accepted",
+                "created_at": "2026-03-22T10:00:00Z",
+                "updated_at": "2026-03-22T10:00:05Z",
+            }
+        if broker_order_id == "broker-1":
+            return {
+                "id": "broker-1",
+                "client_order_id": "client-1",
+                "symbol": "AAPL",
+                "side": "buy",
+                "type": "limit",
+                "qty": "10",
+                "filled_qty": "0",
+                "limit_price": "101.25",
+                "status": "canceled",
+                "created_at": "2026-03-22T10:00:00Z",
+                "updated_at": "2026-03-22T10:01:00Z",
+            }
+        return None
+
+    def fake_cancel_order(broker_order_id: str):
+        canceled.append(broker_order_id)
+
+    service.broker.list_recent_orders = fake_list_recent_orders
+    service.broker.get_order = fake_get_order
+    service.broker.cancel_order = fake_cancel_order
+    try:
+        response = client.get("/api/orders")
+        assert response.status_code == 200
+        orders = response.json()
+        assert orders[0]["brokerOrderId"] == "broker-1"
+        assert orders[0]["cancelable"] is True
+        assert orders[0]["symbol"] == "AAPL"
+        assert any(order["brokerOrderId"] == "broker-2" for order in orders)
+
+        cancel_response = client.delete("/api/orders/broker-1")
+        assert cancel_response.status_code == 200
+        canceled_view = cancel_response.json()
+        assert canceled_view["status"] == "CANCELED"
+        assert canceled == ["broker-1"]
+
+        with SessionLocal() as db:
+            local = db.scalar(select(OrderEntity).where(OrderEntity.order_id == "ORD-9001"))
+            assert local is not None
+            assert local.status == "CANCELED"
+    finally:
+        service.broker.list_recent_orders = original_list_recent_orders
+        service.broker.get_order = original_get_order
+        service.broker.cancel_order = original_cancel_order
+
+
+def test_cancel_recent_root_order_closes_pending_position() -> None:
+    with SessionLocal() as db:
+        db.add(
+            PositionEntity(
+                symbol="AMD",
+                phase="entry_pending",
+                entry_price=201.22,
+                live_price=201.22,
+                shares=10,
+                stop_ref="lod",
+                stop_price=198.33,
+                tranche_count=3,
+                tranche_modes=tranche_modes(),
+                stop_modes=[{"mode": "stop", "pct": None} for _ in range(3)],
+                tranches=[
+                    {
+                        "id": "T1",
+                        "qty": 3,
+                        "stop": 198.33,
+                        "label": "T1",
+                        "status": "active",
+                        "mode": "limit",
+                        "trail": 2.0,
+                        "trailUnit": "$",
+                        "runnerStop": None,
+                    },
+                    {
+                        "id": "T2",
+                        "qty": 3,
+                        "stop": 198.33,
+                        "label": "T2",
+                        "status": "active",
+                        "mode": "limit",
+                        "trail": 2.0,
+                        "trailUnit": "$",
+                        "runnerStop": None,
+                    },
+                    {
+                        "id": "T3",
+                        "qty": 4,
+                        "stop": 198.33,
+                        "label": "T3",
+                        "status": "active",
+                        "mode": "limit",
+                        "trail": 2.0,
+                        "trailUnit": "$",
+                        "runnerStop": None,
+                    },
+                ],
+                setup_snapshot=service.get_setup(db, "AAPL").model_dump(mode="json"),
+                root_order_id="ORD-9010",
+            )
+        )
+        db.add(
+            OrderEntity(
+                order_id="ORD-9010",
+                broker_order_id="broker-root",
+                symbol="AMD",
+                type="MKT",
+                qty=10,
+                orig_qty=10,
+                price=201.22,
+                status="PENDING",
+                tranche_label="AMD",
+                covered_tranches=[],
+                parent_id=None,
+            )
+        )
+        db.commit()
+
+    original_get_order = service.broker.get_order
+    original_cancel_order = service.broker.cancel_order
+
+    def fake_get_order(broker_order_id: str):
+        if broker_order_id == "broker-root":
+            return {
+                "id": "broker-root",
+                "client_order_id": "client-root",
+                "symbol": "AMD",
+                "side": "buy",
+                "type": "market",
+                "qty": "10",
+                "filled_qty": "0",
+                "status": "accepted",
+                "created_at": "2026-03-22T10:00:00Z",
+                "updated_at": "2026-03-22T10:00:05Z",
+            }
+        return None
+
+    canceled: list[str] = []
+
+    def fake_cancel_order(broker_order_id: str):
+        canceled.append(broker_order_id)
+
+    service.broker.get_order = fake_get_order
+    service.broker.cancel_order = fake_cancel_order
+    try:
+        response = client.delete("/api/orders/broker-root")
+        assert response.status_code == 200
+        assert canceled == ["broker-root"]
+        with SessionLocal() as db:
+            position = db.scalar(select(PositionEntity).where(PositionEntity.symbol == "AMD"))
+            assert position is not None
+            assert position.phase == "closed"
+            assert all(tranche["status"] == "canceled" for tranche in position.tranches)
+    finally:
+        service.broker.get_order = original_get_order
+        service.broker.cancel_order = original_cancel_order
