@@ -15,6 +15,7 @@ import { StopProtectionPanel } from "@/components/StopProtectionPanel";
 import { ApiError, api } from "@/lib/api";
 import { defaultAllocationPcts, defaultStopPcts, entryDirection, normalizeAllocationPcts, normalizeStopPcts } from "@/lib/cockpit-ui";
 import { evaluateEntryOrderRules } from "@/lib/entry-order-rules";
+import { defaultStopModesFor, normalizeStopDraftSelection, resolveStopPreviewSelection, stopDraftKey, type StopDraftSelection } from "@/lib/stop-preview";
 import type { AccountView, AuthUser, EntryOrderDraft, EntrySide, LogEntry, OffHoursMode, OrderView, PositionView, SetupResponse, StopMode, TrancheMode } from "@/lib/types";
 
 const DEFAULT_STOP_MODES: StopMode[] = [
@@ -175,14 +176,6 @@ function deriveSetupForSelection(
   };
 }
 
-function defaultStopModesFor(stopMode: number): StopMode[] {
-  const defaults = defaultStopPcts(stopMode);
-  return DEFAULT_STOP_MODES.map((mode, index) => ({
-    ...mode,
-    pct: defaults[index] ?? mode.pct,
-  }));
-}
-
 function defaultTrancheModesFor(count: number): TrancheMode[] {
   const allocations = defaultAllocationPcts(count);
   return DEFAULT_TRANCHE_MODES.map((mode, index) => ({
@@ -278,6 +271,7 @@ export function Cockpit() {
   const setupLoadedRef = useRef(false);
   const stopModeRef = useRef(3);
   const stopModesRef = useRef<StopMode[]>(DEFAULT_STOP_MODES);
+  const stopDraftsRef = useRef<Record<string, StopDraftSelection>>({});
   const trancheCountRef = useRef(3);
   const trancheModesRef = useRef<TrancheMode[]>(DEFAULT_TRANCHE_MODES);
   const dragCleanupRef = useRef<(() => void) | null>(null);
@@ -458,6 +452,14 @@ export function Cockpit() {
 
   const applyPositionState = useCallback(
     (position: PositionView) => {
+      const nextStopSelection = resolveStopPreviewSelection({
+        position,
+        localDraft: stopDraftsRef.current[stopDraftKey(position)] ?? null,
+        fallback: {
+          stopMode: stopModeRef.current || 3,
+          stopModes: stopModesRef.current,
+        },
+      });
       activeSymbolRef.current = position.symbol;
       setupLoadedRef.current = true;
       setActiveSymbol(position.symbol);
@@ -473,18 +475,15 @@ export function Cockpit() {
         limitPrice: position.setup.entry,
       });
       setOffHoursMode("queue_for_open");
-      const resolvedStopMode = position.stopMode && position.stopMode > 0 ? position.stopMode : stopModeRef.current || 3;
       const resolvedTrancheCount = position.trancheCount && position.trancheCount > 0
         ? position.trancheCount
         : trancheCountRef.current || 3;
-      const nextStopModes = position.stopModes.length
-        ? position.stopModes
-        : stopModesRef.current.slice(0, resolvedStopMode);
       const nextTrancheModes = position.trancheModes.length
         ? position.trancheModes
         : trancheModesRef.current.slice(0, resolvedTrancheCount);
-      setStopMode(resolvedStopMode);
-      setStopModes(nextStopModes.length ? nextStopModes : defaultStopModesFor(resolvedStopMode));
+      stopDraftsRef.current[stopDraftKey(position)] = nextStopSelection;
+      setStopMode(nextStopSelection.stopMode);
+      setStopModes(nextStopSelection.stopModes);
       setTrancheCount(resolvedTrancheCount);
       setTrancheModes(nextTrancheModes.length ? nextTrancheModes : defaultTrancheModesFor(resolvedTrancheCount));
       subscribePrice(position.symbol);
@@ -1180,34 +1179,47 @@ export function Cockpit() {
                 collapsed={panelCollapse.stopProtection}
                 onToggleCollapse={() => updateCollapse("stopProtection")}
                 onStopModeChange={(value) => {
-                  setStopMode(value);
-                  setStopModes(defaultStopModesFor(value));
+                  const nextSelection = normalizeStopDraftSelection(value, defaultStopModesFor(value));
+                  const draftKey = activePosition ? stopDraftKey(activePosition) : "";
+                  if (draftKey) {
+                    stopDraftsRef.current[draftKey] = nextSelection;
+                  }
+                  setStopMode(nextSelection.stopMode);
+                  setStopModes(nextSelection.stopModes);
                 }}
-                onStopModeValueChange={(index, value) =>
-                  setStopModes((current) => {
-                    const next = current.map((item, itemIndex) => (itemIndex === index ? value : item));
-                    if (value.mode === "be") {
-                      for (let itemIndex = 0; itemIndex <= index; itemIndex += 1) {
-                        next[itemIndex] = { ...next[itemIndex], mode: "be", pct: 0 };
-                      }
-                      const remaining = stopMode - (index + 1);
-                      for (let itemIndex = index + 1; itemIndex < stopMode; itemIndex += 1) {
-                        next[itemIndex] = {
-                          ...next[itemIndex],
-                          mode: "stop",
-                          pct: Number((((itemIndex - index) / Math.max(1, remaining)) * 100).toFixed(2)),
-                        };
-                      }
-                      return next;
-                    }
-                    return normalizeStopPcts(
-                      next,
-                      stopMode,
-                      index,
-                      Number(value.pct ?? defaultStopPcts(stopMode)[index] ?? 100)
-                    );
-                  })
-                }
+                onStopModeValueChange={(index, value) => {
+                  const currentStopMode = stopModeRef.current || 3;
+                  const draftKey = activePosition ? stopDraftKey(activePosition) : "";
+                  const currentModes = stopModesRef.current;
+                  const next = currentModes.map((item, itemIndex) => (itemIndex === index ? value : item));
+                  const updatedModes = value.mode === "be"
+                    ? (() => {
+                        const nextModes = [...next];
+                        for (let itemIndex = 0; itemIndex <= index; itemIndex += 1) {
+                          nextModes[itemIndex] = { ...nextModes[itemIndex], mode: "be", pct: 0 };
+                        }
+                        const remaining = currentStopMode - (index + 1);
+                        for (let itemIndex = index + 1; itemIndex < currentStopMode; itemIndex += 1) {
+                          nextModes[itemIndex] = {
+                            ...nextModes[itemIndex],
+                            mode: "stop",
+                            pct: Number((((itemIndex - index) / Math.max(1, remaining)) * 100).toFixed(2)),
+                          };
+                        }
+                        return nextModes;
+                      })()
+                    : normalizeStopPcts(
+                        next,
+                        currentStopMode,
+                        index,
+                        Number(value.pct ?? defaultStopPcts(currentStopMode)[index] ?? 100)
+                      );
+                  const nextSelection = normalizeStopDraftSelection(currentStopMode, updatedModes);
+                  if (draftKey) {
+                    stopDraftsRef.current[draftKey] = nextSelection;
+                  }
+                  setStopModes(nextSelection.stopModes);
+                }}
                 onExecute={() => void executeStops()}
                 onMoveToBe={() => void moveToBe()}
                 onFlatten={() => void flatten()}
