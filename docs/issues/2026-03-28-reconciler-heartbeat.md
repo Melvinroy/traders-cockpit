@@ -1,10 +1,12 @@
 # Reconciler Heartbeat
 
-> Status: In Progress
-> Branch: `codex/feature-hedge-hardening-foundation`
+> Status: In Review
+> Branch: `codex/feature-broker-truth-paper-promotion`
 > Opened: 2026-03-28
 > Closed: -
 > Closing Commit: -
+> Review PR: [#32](https://github.com/Melvinroy/traders-cockpit/pull/32)
+> Latest Commit: `afb12ef`
 
 ## Problem
 
@@ -19,7 +21,7 @@ The stack can reconcile on demand and from webhook ingress, but it does not yet 
 
 ## Acceptance Criteria
 
-- [ ] open working orders use the fast heartbeat cadence
-- [ ] idle periods use the slow heartbeat cadence
-- [ ] setup and account payloads surface reconcile freshness
-- [ ] stale reconciliation blocks trade-mutating routes with a stable reason string
+- [x] open working orders use the fast heartbeat cadence
+- [x] idle periods use the slow heartbeat cadence
+- [x] setup and account payloads surface reconcile freshness
+- [x] stale reconciliation blocks trade-mutating routes with a stable reason string
