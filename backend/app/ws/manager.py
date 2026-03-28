@@ -12,7 +12,9 @@ from redis.asyncio import Redis
 
 
 class WebSocketManager:
-    def __init__(self, redis_url: str | None = None, channel_prefix: str = "traders-cockpit") -> None:
+    def __init__(
+        self, redis_url: str | None = None, channel_prefix: str = "traders-cockpit"
+    ) -> None:
         self.connections: dict[str, set[WebSocket]] = defaultdict(set)
         self._lock = asyncio.Lock()
         self._redis_url = redis_url
@@ -32,7 +34,9 @@ class WebSocketManager:
             return
         self._redis = client
         self._shutdown.clear()
-        self._subscriber_task = asyncio.create_task(self._subscriber_loop(), name="redis-ws-fanout")
+        self._subscriber_task = asyncio.create_task(
+            self._subscriber_loop(), name="redis-ws-fanout"
+        )
 
     async def stop(self) -> None:
         self._shutdown.set()
@@ -81,7 +85,9 @@ class WebSocketManager:
         await pubsub.subscribe(*channels)
         try:
             while not self._shutdown.is_set():
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=1.0
+                )
                 if not message:
                     continue
                 payload = self._decode_message(message.get("data"))

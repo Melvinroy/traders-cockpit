@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.core.config import Settings
@@ -29,15 +31,24 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
     user = auth_store.authenticate(username=payload.username, password=payload.password)
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    auth_store.revoke_session(session_token=request.cookies.get(settings.auth_cookie_name))
     session_token, session_data = auth_store.create_session(
         user=user,
         user_agent=request.headers.get("user-agent"),
         ip_addr=request.client.host if request.client else None,
     )
+    csrf_token = secrets.token_urlsafe(32)
     response.set_cookie(
         settings.auth_cookie_name,
         session_token,
         httponly=True,
+        samesite=settings.auth_cookie_samesite,
+        secure=settings.auth_cookie_secure,
+    )
+    response.set_cookie(
+        settings.auth_csrf_cookie_name,
+        csrf_token,
+        httponly=False,
         samesite=settings.auth_cookie_samesite,
         secure=settings.auth_cookie_secure,
     )
@@ -54,6 +65,12 @@ def logout(request: Request, response: Response) -> dict[str, bool]:
     response.delete_cookie(
         settings.auth_cookie_name,
         httponly=True,
+        samesite=settings.auth_cookie_samesite,
+        secure=settings.auth_cookie_secure,
+    )
+    response.delete_cookie(
+        settings.auth_csrf_cookie_name,
+        httponly=False,
         samesite=settings.auth_cookie_samesite,
         secure=settings.auth_cookie_secure,
     )

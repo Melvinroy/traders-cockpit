@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import hashlib
+import json
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -13,30 +15,89 @@ from app.core.config import Settings
 class BrokerOrderResult:
     broker_order_id: str | None
     status: str
+    payload: dict | None = None
+
+
+@dataclass
+class BrokerEntryOrder:
+    symbol: str
+    qty: int
+    side: str
+    order_type: str
+    time_in_force: str
+    limit_price: float | None = None
+    stop_price: float | None = None
+    order_class: str = "simple"
+    extended_hours: bool = False
+    take_profit_limit_price: float | None = None
+    stop_loss_stop_price: float | None = None
+    stop_loss_limit_price: float | None = None
+
+
+@dataclass
+class BrokerWebhookEvent:
+    event_id: str
+    event_type: str
+    kind: str
+    broker_order_id: str | None = None
+    symbol: str | None = None
+    payload: dict | None = None
+    fill_id: str | None = None
+    occurred_at: datetime | None = None
+    account_payload: dict | None = None
 
 
 class BrokerAdapter:
+    def place_entry_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
+        raise NotImplementedError
+
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
+        return self.place_entry_order(
+            BrokerEntryOrder(
+                symbol=symbol,
+                qty=qty,
+                side=side,
+                order_type="market",
+                time_in_force="day",
+            )
+        )
+
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
         raise NotImplementedError
 
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
-        raise NotImplementedError
-
-    def place_limit_order(self, symbol: str, qty: int, limit_price: float) -> BrokerOrderResult:
+    def place_limit_order(
+        self,
+        symbol: str,
+        qty: int,
+        limit_price: float,
+        side: str = "sell",
+        time_in_force: str = "gtc",
+        extended_hours: bool = False,
+    ) -> BrokerOrderResult:
         raise NotImplementedError
 
     def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
     ) -> BrokerOrderResult:
         raise NotImplementedError
 
     def close_position(self, symbol: str) -> BrokerOrderResult:
         raise NotImplementedError
 
-    def wait_for_position(self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0) -> int:
+    def wait_for_position(
+        self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0
+    ) -> int:
         raise NotImplementedError
 
     def cancel_order(self, broker_order_id: str) -> None:
+        raise NotImplementedError
+
+    def list_recent_orders(self, limit: int = 50) -> list[dict]:
+        raise NotImplementedError
+
+    def get_order(self, broker_order_id: str) -> dict | None:
         raise NotImplementedError
 
     def get_session_state(self) -> str:
@@ -45,29 +106,68 @@ class BrokerAdapter:
     def get_account_summary(self) -> dict[str, float] | None:
         raise NotImplementedError
 
+    def normalize_webhook_payload(self, payload: dict) -> list[BrokerWebhookEvent]:
+        return []
+
 
 class PaperBrokerAdapter(BrokerAdapter):
+    def place_entry_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
+        return BrokerOrderResult(
+            broker_order_id=None,
+            status=("ACTIVE" if order.order_class in {"bracket", "oco", "oto"} else "FILLED"),
+            payload={
+                "symbol": order.symbol,
+                "qty": str(order.qty),
+                "side": order.side,
+                "type": order.order_type,
+                "time_in_force": order.time_in_force,
+                "order_class": order.order_class,
+                "limit_price": order.limit_price,
+                "stop_price": order.stop_price,
+                "extended_hours": order.extended_hours,
+                "status": "accepted",
+            },
+        )
+
     def place_market_order(self, symbol: str, qty: int, side: str) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="FILLED")
 
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="ACTIVE")
 
-    def place_limit_order(self, symbol: str, qty: int, limit_price: float) -> BrokerOrderResult:
+    def place_limit_order(
+        self,
+        symbol: str,
+        qty: int,
+        limit_price: float,
+        side: str = "sell",
+        time_in_force: str = "gtc",
+        extended_hours: bool = False,
+    ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="FILLED")
 
     def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
     ) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="ACTIVE")
 
     def close_position(self, symbol: str) -> BrokerOrderResult:
         return BrokerOrderResult(broker_order_id=None, status="FILLED")
 
-    def wait_for_position(self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0) -> int:
+    def wait_for_position(
+        self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0
+    ) -> int:
         return min_qty
 
     def cancel_order(self, broker_order_id: str) -> None:
+        return None
+
+    def list_recent_orders(self, limit: int = 50) -> list[dict]:
+        return []
+
+    def get_order(self, broker_order_id: str) -> dict | None:
         return None
 
     def get_session_state(self) -> str:
@@ -75,6 +175,9 @@ class PaperBrokerAdapter(BrokerAdapter):
 
     def get_account_summary(self) -> dict[str, float] | None:
         return None
+
+    def normalize_webhook_payload(self, payload: dict) -> list[BrokerWebhookEvent]:
+        return []
 
 
 class AlpacaBrokerAdapter(BrokerAdapter):
@@ -86,6 +189,8 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             else settings.alpaca_api_base_url
         )
         self.market_tz = ZoneInfo("America/New_York")
+        self._account_summary_cache: tuple[float, dict[str, float]] | None = None
+        self._recent_orders_cache: tuple[float, int, list[dict]] | None = None
 
     def _client(self) -> httpx.Client:
         self._ensure_execution_allowed()
@@ -95,7 +200,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 "APCA-API-KEY-ID": self.settings.alpaca_api_key_id,
                 "APCA-API-SECRET-KEY": self.settings.alpaca_api_secret_key,
             },
-            timeout=10.0,
+            timeout=4.0,
         )
 
     def _ensure_execution_allowed(self) -> None:
@@ -144,38 +249,76 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             return "after_hours"
         return "overnight"
 
-    def place_market_order(self, symbol: str, qty: int, side: str, time_in_force: str = "day") -> BrokerOrderResult:
+    def place_entry_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
-            return self._fallback_or_raise("FILLED", "Alpaca paper credentials are missing for broker execution")
-        payload = {"symbol": symbol, "qty": qty, "side": side, "type": "market", "time_in_force": time_in_force}
-        try:
-            with self._client() as client:
-                response = client.post("/v2/orders", json=payload)
-                response.raise_for_status()
-                data = response.json()
-        except httpx.HTTPError as exc:
-            return self._fallback_or_raise("FILLED", self._extract_http_error_message("Alpaca market order failed", exc))
-        return BrokerOrderResult(data.get("id"), str(data.get("status", "accepted")).upper())
-
-    def place_stop_order(self, symbol: str, qty: int, stop_price: float) -> BrokerOrderResult:
-        if not self.settings.has_alpaca_credentials:
-            return self._fallback_or_raise("ACTIVE", "Alpaca paper credentials are missing for stop execution")
-        payload = {
-            "symbol": symbol,
-            "qty": qty,
-            "side": "sell",
-            "type": "stop",
-            "stop_price": stop_price,
-            "time_in_force": "gtc",
+            return self._fallback_or_raise(
+                "FILLED", "Alpaca paper credentials are missing for broker execution"
+            )
+        payload: dict[str, object] = {
+            "symbol": order.symbol,
+            "qty": order.qty,
+            "side": order.side,
+            "type": order.order_type,
+            "time_in_force": order.time_in_force,
         }
+        if order.limit_price is not None:
+            payload["limit_price"] = order.limit_price
+        if order.stop_price is not None:
+            payload["stop_price"] = order.stop_price
+        if order.order_class != "simple":
+            payload["order_class"] = order.order_class
+        if order.extended_hours:
+            payload["extended_hours"] = True
+        if order.take_profit_limit_price is not None:
+            payload["take_profit"] = {"limit_price": order.take_profit_limit_price}
+        if order.stop_loss_stop_price is not None:
+            stop_loss: dict[str, float] = {"stop_price": order.stop_loss_stop_price}
+            if order.stop_loss_limit_price is not None:
+                stop_loss["limit_price"] = order.stop_loss_limit_price
+            payload["stop_loss"] = stop_loss
         try:
             with self._client() as client:
                 response = client.post("/v2/orders", json=payload)
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as exc:
-            return self._fallback_or_raise("ACTIVE", self._extract_http_error_message("Alpaca stop order failed", exc))
-        return BrokerOrderResult(data.get("id"), str(data.get("status", "new")).upper())
+            return self._fallback_or_raise(
+                "FILLED",
+                self._extract_http_error_message("Alpaca market order failed", exc),
+            )
+        return BrokerOrderResult(data.get("id"), str(data.get("status", "accepted")).upper(), data)
+
+    def place_market_order(
+        self, symbol: str, qty: int, side: str, time_in_force: str = "day"
+    ) -> BrokerOrderResult:
+        return self.place_entry_order(
+            BrokerEntryOrder(
+                symbol=symbol,
+                qty=qty,
+                side=side,
+                order_type="market",
+                time_in_force=time_in_force,
+            )
+        )
+
+    def place_stop_order(
+        self, symbol: str, qty: int, stop_price: float, side: str = "sell"
+    ) -> BrokerOrderResult:
+        if not self.settings.has_alpaca_credentials:
+            return self._fallback_or_raise(
+                "ACTIVE", "Alpaca paper credentials are missing for stop execution"
+            )
+        result = self.place_entry_order(
+            BrokerEntryOrder(
+                symbol=symbol,
+                qty=qty,
+                side=side,
+                order_type="stop",
+                stop_price=stop_price,
+                time_in_force="gtc",
+            )
+        )
+        return BrokerOrderResult(result.broker_order_id, result.status, result.payload)
 
     def place_limit_order(
         self,
@@ -187,35 +330,32 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         extended_hours: bool = False,
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
-            return self._fallback_or_raise("FILLED", "Alpaca paper credentials are missing for profit execution")
+            return self._fallback_or_raise(
+                "FILLED", "Alpaca paper credentials are missing for profit execution"
+            )
+        return self.place_entry_order(
+            BrokerEntryOrder(
+                symbol=symbol,
+                qty=qty,
+                side=side,
+                order_type="limit",
+                limit_price=limit_price,
+                time_in_force=time_in_force,
+                extended_hours=extended_hours,
+            )
+        )
+
+    def place_trailing_stop(
+        self, symbol: str, qty: int, trail: float, trail_unit: str, side: str = "sell"
+    ) -> BrokerOrderResult:
+        if not self.settings.has_alpaca_credentials:
+            return self._fallback_or_raise(
+                "ACTIVE", "Alpaca paper credentials are missing for runner execution"
+            )
         payload = {
             "symbol": symbol,
             "qty": qty,
             "side": side,
-            "type": "limit",
-            "limit_price": limit_price,
-            "time_in_force": time_in_force,
-        }
-        if extended_hours:
-            payload["extended_hours"] = True
-        try:
-            with self._client() as client:
-                response = client.post("/v2/orders", json=payload)
-                response.raise_for_status()
-                data = response.json()
-        except httpx.HTTPError as exc:
-            return self._fallback_or_raise("FILLED", self._extract_http_error_message("Alpaca limit order failed", exc))
-        return BrokerOrderResult(data.get("id"), str(data.get("status", "accepted")).upper())
-
-    def place_trailing_stop(
-        self, symbol: str, qty: int, trail: float, trail_unit: str
-    ) -> BrokerOrderResult:
-        if not self.settings.has_alpaca_credentials:
-            return self._fallback_or_raise("ACTIVE", "Alpaca paper credentials are missing for runner execution")
-        payload = {
-            "symbol": symbol,
-            "qty": qty,
-            "side": "sell",
             "type": "trailing_stop",
             "time_in_force": "gtc",
         }
@@ -229,22 +369,32 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as exc:
-            return self._fallback_or_raise("ACTIVE", self._extract_http_error_message("Alpaca trailing stop failed", exc))
+            return self._fallback_or_raise(
+                "ACTIVE",
+                self._extract_http_error_message("Alpaca trailing stop failed", exc),
+            )
         return BrokerOrderResult(data.get("id"), str(data.get("status", "new")).upper())
 
     def close_position(self, symbol: str) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
-            return self._fallback_or_raise("FILLED", "Alpaca paper credentials are missing for flatten execution")
+            return self._fallback_or_raise(
+                "FILLED", "Alpaca paper credentials are missing for flatten execution"
+            )
         try:
             with self._client() as client:
                 response = client.delete(f"/v2/positions/{symbol}")
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as exc:
-            return self._fallback_or_raise("FILLED", self._extract_http_error_message("Alpaca close position failed", exc))
+            return self._fallback_or_raise(
+                "FILLED",
+                self._extract_http_error_message("Alpaca close position failed", exc),
+            )
         return BrokerOrderResult(data.get("id"), "FILLED")
 
-    def wait_for_position(self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0) -> int:
+    def wait_for_position(
+        self, symbol: str, min_qty: int = 1, timeout_seconds: float = 15.0
+    ) -> int:
         if not self.settings.has_alpaca_credentials:
             if self.settings.allow_controller_mock:
                 return min_qty
@@ -287,7 +437,61 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         except httpx.HTTPError as exc:
             if self.settings.allow_controller_mock:
                 return
-            raise ValueError(self._extract_http_error_message("Alpaca order cancellation failed", exc)) from exc
+            raise ValueError(
+                self._extract_http_error_message("Alpaca order cancellation failed", exc)
+            ) from exc
+
+    def list_recent_orders(self, limit: int = 50) -> list[dict]:
+        import time
+
+        cache_entry = self._recent_orders_cache
+        if cache_entry is not None:
+            cached_at, cached_limit, cached_payload = cache_entry
+            if cached_limit >= limit and time.monotonic() - cached_at < 2.0:
+                return [dict(order) for order in cached_payload[:limit]]
+        if not self.settings.has_alpaca_credentials:
+            if self.settings.allow_controller_mock:
+                return []
+            raise ValueError("Alpaca paper credentials are missing for broker order lookup")
+        try:
+            with self._client() as client:
+                response = client.get(
+                    "/v2/orders",
+                    params={"status": "all", "direction": "desc", "limit": limit},
+                )
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPError as exc:
+            if self.settings.allow_controller_mock:
+                return []
+            raise ValueError(
+                self._extract_http_error_message("Alpaca recent orders lookup failed", exc)
+            ) from exc
+        rows = [dict(order) for order in payload] if isinstance(payload, list) else []
+        self._recent_orders_cache = (time.monotonic(), limit, rows)
+        return [dict(order) for order in rows]
+
+    def get_order(self, broker_order_id: str) -> dict | None:
+        if not broker_order_id:
+            return None
+        if not self.settings.has_alpaca_credentials:
+            if self.settings.allow_controller_mock:
+                return None
+            raise ValueError("Alpaca paper credentials are missing for broker order lookup")
+        try:
+            with self._client() as client:
+                response = client.get(f"/v2/orders/{broker_order_id}")
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPError as exc:
+            if self.settings.allow_controller_mock:
+                return None
+            raise ValueError(
+                self._extract_http_error_message("Alpaca order lookup failed", exc)
+            ) from exc
+        return payload if isinstance(payload, dict) else None
 
     def get_session_state(self) -> str:
         if not self.settings.has_alpaca_credentials:
@@ -306,9 +510,18 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         except httpx.HTTPError as exc:
             if self.settings.allow_controller_mock:
                 return "regular_open"
-            raise ValueError(self._extract_http_error_message("Alpaca market clock lookup failed", exc)) from exc
+            raise ValueError(
+                self._extract_http_error_message("Alpaca market clock lookup failed", exc)
+            ) from exc
 
     def get_account_summary(self) -> dict[str, float] | None:
+        import time
+
+        cache_entry = self._account_summary_cache
+        if cache_entry is not None:
+            cached_at, payload = cache_entry
+            if time.monotonic() - cached_at < 5.0:
+                return dict(payload)
         if not self.settings.has_alpaca_credentials:
             if self.settings.allow_controller_mock:
                 return None
@@ -321,7 +534,9 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         except httpx.HTTPError as exc:
             if self.settings.allow_controller_mock:
                 return None
-            raise ValueError(self._extract_http_error_message("Alpaca account lookup failed", exc)) from exc
+            raise ValueError(
+                self._extract_http_error_message("Alpaca account lookup failed", exc)
+            ) from exc
         try:
             equity = float(payload.get("equity") or 0.0)
             buying_power = float(payload.get("buying_power") or 0.0)
@@ -330,4 +545,97 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             return None
         if equity <= 0 or buying_power <= 0:
             return None
-        return {"equity": equity, "buying_power": buying_power, "cash": cash}
+        summary = {"equity": equity, "buying_power": buying_power, "cash": cash}
+        self._account_summary_cache = (time.monotonic(), summary)
+        return dict(summary)
+
+    def normalize_webhook_payload(self, payload: dict) -> list[BrokerWebhookEvent]:
+        if not isinstance(payload, dict):
+            return []
+        raw_events = payload.get("events") if isinstance(payload.get("events"), list) else [payload]
+        normalized: list[BrokerWebhookEvent] = []
+        for raw_event in raw_events:
+            if not isinstance(raw_event, dict):
+                continue
+            order = self._extract_webhook_order(raw_event)
+            account = self._extract_webhook_account(raw_event)
+            event_type = str(
+                raw_event.get("event")
+                or raw_event.get("type")
+                or raw_event.get("event_type")
+                or "alpaca_webhook"
+            ).lower()
+            timestamp = self._parse_timestamp(
+                str(
+                    raw_event.get("timestamp")
+                    or (order or {}).get("updated_at")
+                    or (order or {}).get("filled_at")
+                    or ""
+                )
+            )
+            if order is not None:
+                normalized.append(
+                    BrokerWebhookEvent(
+                        event_id=self._stable_event_id("order", event_type, order, timestamp),
+                        event_type=event_type,
+                        kind="order",
+                        broker_order_id=str(order.get("id") or "").strip() or None,
+                        symbol=str(order.get("symbol") or "").upper() or None,
+                        payload=order,
+                        fill_id=self._fill_id_for_event(event_type, order, timestamp),
+                        occurred_at=timestamp,
+                    )
+                )
+            if account is not None:
+                normalized.append(
+                    BrokerWebhookEvent(
+                        event_id=self._stable_event_id("account", event_type, account, timestamp),
+                        event_type=event_type,
+                        kind="account",
+                        payload=account,
+                        occurred_at=timestamp,
+                        account_payload=account,
+                    )
+                )
+        return normalized
+
+    def _extract_webhook_order(self, payload: dict) -> dict | None:
+        for key in ("order", "data", "payload"):
+            candidate = payload.get(key)
+            if isinstance(candidate, dict) and candidate.get("id") and candidate.get("symbol"):
+                return candidate
+        if payload.get("id") and payload.get("symbol"):
+            return payload
+        return None
+
+    def _extract_webhook_account(self, payload: dict) -> dict | None:
+        for key in ("account", "account_snapshot"):
+            candidate = payload.get(key)
+            if isinstance(candidate, dict):
+                return candidate
+        if payload.get("equity") is not None and payload.get("buying_power") is not None:
+            return payload
+        return None
+
+    def _stable_event_id(
+        self, kind: str, event_type: str, payload: dict, timestamp: datetime | None
+    ) -> str:
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(
+            f"{kind}|{event_type}|{timestamp.isoformat() if timestamp else ''}|{canonical}".encode()
+        ).hexdigest()[:24]
+        return f"alpaca-{kind}-{digest}"
+
+    def _fill_id_for_event(
+        self, event_type: str, order: dict, timestamp: datetime | None
+    ) -> str | None:
+        normalized_type = event_type.lower()
+        if normalized_type not in {"fill", "partial_fill", "filled", "partially_filled"}:
+            status = str(order.get("status") or "").lower()
+            if status not in {"filled", "partially_filled"}:
+                return None
+        key = (
+            f"{order.get('id') or ''}|{order.get('filled_qty') or ''}|"
+            f"{timestamp.isoformat() if timestamp else ''}"
+        )
+        return f"fill-{hashlib.sha256(key.encode()).hexdigest()[:24]}"

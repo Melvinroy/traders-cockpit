@@ -6,7 +6,7 @@ import os
 import secrets
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -35,12 +35,11 @@ class AuthStore:
 
     @staticmethod
     def _now_iso() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     def _init_db(self) -> None:
         with self._connect() as conn:
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS auth_users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL UNIQUE,
@@ -51,10 +50,8 @@ class AuthStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS auth_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_token_hash TEXT NOT NULL UNIQUE,
@@ -67,14 +64,11 @@ class AuthStore:
                     ip_addr TEXT,
                     FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
                 )
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active
                 ON auth_sessions(user_id, revoked_at, expires_at)
-                """
-            )
+                """)
             conn.commit()
 
     @staticmethod
@@ -92,7 +86,9 @@ class AuthStore:
             salt = bytes.fromhex(str(salt_hex))
         else:
             salt = os.urandom(16)
-        digest = hashlib.pbkdf2_hmac("sha256", str(password or "").encode("utf-8"), salt, 210_000)
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", str(password or "").encode("utf-8"), salt, 210_000
+        )
         return salt.hex(), digest.hex()
 
     @staticmethod
@@ -107,7 +103,9 @@ class AuthStore:
         salt_hex, hash_hex = self._hash_password(password)
         now = self._now_iso()
         with self._connect() as conn:
-            existing = conn.execute("SELECT id FROM auth_users WHERE username = ?", (clean_username,)).fetchone()
+            existing = conn.execute(
+                "SELECT id FROM auth_users WHERE username = ?", (clean_username,)
+            ).fetchone()
             if existing is None:
                 conn.execute(
                     """
@@ -146,9 +144,13 @@ class AuthStore:
         if not seed_enabled:
             return
         if str(admin_username or "").strip() and str(admin_password or "").strip():
-            self.ensure_user(username=admin_username, password=admin_password, role="admin")
+            self.ensure_user(
+                username=admin_username, password=admin_password, role="admin"
+            )
         if str(trader_username or "").strip() and str(trader_password or "").strip():
-            self.ensure_user(username=trader_username, password=trader_password, role="trader")
+            self.ensure_user(
+                username=trader_username, password=trader_password, role="trader"
+            )
 
     def authenticate(self, *, username: str, password: str) -> AuthUser | None:
         clean_username = self._normalize_username(username)
@@ -166,7 +168,9 @@ class AuthStore:
             ).fetchone()
         if row is None or int(row["is_active"] or 0) != 1:
             return None
-        _, computed_hash = self._hash_password(password, salt_hex=str(row["password_salt"] or ""))
+        _, computed_hash = self._hash_password(
+            password, salt_hex=str(row["password_salt"] or "")
+        )
         if not hmac.compare_digest(str(row["password_hash"] or ""), computed_hash):
             return None
         return AuthUser(
@@ -185,7 +189,7 @@ class AuthStore:
     ) -> tuple[str, dict[str, Any]]:
         token = secrets.token_urlsafe(48)
         token_hash = self._session_token_hash(token)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         now_iso = now.isoformat()
         expires_at = (now + timedelta(hours=self.session_ttl_hours)).isoformat()
         with self._connect() as conn:
@@ -222,7 +226,7 @@ class AuthStore:
         token = str(session_token or "").strip()
         if not token:
             return None
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         now_iso = now.isoformat()
         token_hash = self._session_token_hash(token)
         with self._connect() as conn:
@@ -246,13 +250,18 @@ class AuthStore:
             if row is None:
                 return None
             try:
-                expires_dt = datetime.fromisoformat(str(row["expires_at"] or "").replace("Z", "+00:00"))
+                expires_dt = datetime.fromisoformat(
+                    str(row["expires_at"] or "").replace("Z", "+00:00")
+                )
             except ValueError:
                 return None
             if expires_dt.tzinfo is None:
-                expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                expires_dt = expires_dt.replace(tzinfo=UTC)
             if expires_dt <= now:
-                conn.execute("UPDATE auth_sessions SET revoked_at = ? WHERE id = ?", (now_iso, int(row["session_id"])))
+                conn.execute(
+                    "UPDATE auth_sessions SET revoked_at = ? WHERE id = ?",
+                    (now_iso, int(row["session_id"])),
+                )
                 conn.commit()
                 return None
             if int(row["is_active"] or 0) != 1:
@@ -298,6 +307,9 @@ def get_auth_store(settings: Settings) -> AuthStore:
     cache_key = str(Path(settings.auth_db_path).resolve())
     store = _auth_store_cache.get(cache_key)
     if store is None:
-        store = AuthStore(db_path=settings.auth_db_path, session_ttl_hours=settings.auth_session_ttl_hours)
+        store = AuthStore(
+            db_path=settings.auth_db_path,
+            session_ttl_hours=settings.auth_session_ttl_hours,
+        )
         _auth_store_cache[cache_key] = store
     return store

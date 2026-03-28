@@ -131,7 +131,7 @@ docker compose --env-file .env up --build -d
 | **Backend API** | http://127.0.0.1:8000 |
 | **API Docs (Swagger)** | http://127.0.0.1:8000/docs |
 
-Default login: `admin` / `admin123!`
+Default login: `admin` / `change-me-admin`
 
 ---
 
@@ -224,6 +224,8 @@ User Browser
 - `app/adapters/broker.py` — `PaperBrokerAdapter` (sim) and `AlpacaBrokerAdapter` (real execution)
 - `app/adapters/market_data.py` — Alpaca/Polygon quotes with deterministic fallback
 - `app/ws/manager.py` — Redis pub/sub fanout with single-process fallback
+- `scripts/dev/rebuild_position_projections.py` — rebuild projection payloads from current backend state
+- `scripts/dev/check_broker_paper_drift.py` — compare local broker-paper state with broker order truth and emit a pass/fail summary
 
 See [`docs/architecture/OVERVIEW.md`](docs/architecture/OVERVIEW.md) for a full breakdown.
 
@@ -276,7 +278,7 @@ Copy `.env.example` to `.env` and set the values you need. Most have safe defaul
 |---|---|---|
 | `AUTH_REQUIRE_LOGIN` | `true` | Enforce login before access |
 | `AUTH_ADMIN_USERNAME` | `admin` | Admin account username |
-| `AUTH_ADMIN_PASSWORD` | `admin123!` | **Change this in production** |
+| `AUTH_ADMIN_PASSWORD` | `change-me-admin` | **Change this in production** |
 | `AUTH_TRADER_USERNAME` | `trader` | Trader account username |
 | `AUTH_SESSION_TTL_HOURS` | `24` | Session cookie lifetime |
 | `AUTH_COOKIE_SAMESITE` | `lax` | Set `none` for cross-origin hosted deployments |
