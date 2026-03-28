@@ -12,10 +12,32 @@ class StopMode(BaseModel):
 
 
 EntrySide = Literal["buy", "sell"]
+EntryOrderType = Literal["market", "limit", "stop", "stop_limit"]
+TimeInForce = Literal["day", "gtc", "ioc", "fok", "opg", "cls"]
+OrderClass = Literal["simple", "bracket", "oco", "oto"]
+OtoExitSide = Literal["stop_loss", "take_profit"]
+
+
+class TakeProfitDraft(BaseModel):
+    limitPrice: float | None = None
+
+
+class StopLossDraft(BaseModel):
+    stopPrice: float | None = None
+    limitPrice: float | None = None
 
 
 class EntryOrderDraft(BaseModel):
     side: EntrySide = "buy"
+    orderType: EntryOrderType = "limit"
+    timeInForce: TimeInForce = "day"
+    orderClass: OrderClass = "simple"
+    extendedHours: bool = False
+    limitPrice: float | None = None
+    stopPrice: float | None = None
+    otoExitSide: OtoExitSide = "stop_loss"
+    takeProfit: TakeProfitDraft | None = None
+    stopLoss: StopLossDraft | None = None
 
 
 class TrancheMode(BaseModel):

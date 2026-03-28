@@ -18,6 +18,7 @@ from app.adapters.broker import (
 )
 from app.adapters.market_data import AlpacaPolygonMarketDataAdapter, SetupMarketData
 from app.core.config import Settings
+from app.core.observability import get_request_id
 from app.models.entities import (
     AccountSettingsEntity,
     AccountSnapshotEntity,
@@ -41,17 +42,14 @@ from app.schemas.cockpit import (
     PositionView,
     ProfitRequest,
     SetupResponse,
-    StopLossDraft,
     StopMode,
     StopsRequest,
-    TakeProfitDraft,
     TradeEnterRequest,
     TradePreviewRequest,
     TradePreviewResponse,
     Tranche,
     TrancheMode,
 )
-from app.services.entry_order_rules import evaluate_entry_order_rules
 from app.ws.manager import WebSocketManager
 
 
@@ -2418,6 +2416,7 @@ class CockpitService:
             order_type="limit",
             time_in_force="gtc",
             limit_price=round(entry, 2),
+            reference_price=round(entry, 2),
         )
 
     def _entry_should_start_filled(

@@ -33,8 +33,12 @@ class AuthStoreBase:
         self.session_ttl_hours = max(1, min(int(session_ttl_hours or 24), 24 * 30))
 
     @staticmethod
+    def _now() -> datetime:
+        return datetime.now(UTC)
+
+    @staticmethod
     def _now_iso() -> str:
-        return datetime.now(UTC).isoformat()
+        return AuthStoreBase._now().isoformat()
 
     def _init_db(self) -> None:
         with self._connect() as conn:
@@ -85,9 +89,7 @@ class AuthStoreBase:
             salt = bytes.fromhex(str(salt_hex))
         else:
             salt = os.urandom(16)
-        digest = hashlib.pbkdf2_hmac(
-            "sha256", str(password or "").encode("utf-8"), salt, 210_000
-        )
+        digest = hashlib.pbkdf2_hmac("sha256", str(password or "").encode("utf-8"), salt, 210_000)
         return salt.hex(), digest.hex()
 
     @staticmethod
@@ -319,13 +321,9 @@ class FileAuthStore(AuthStoreBase):
         if not seed_enabled:
             return
         if str(admin_username or "").strip() and str(admin_password or "").strip():
-            self.ensure_user(
-                username=admin_username, password=admin_password, role="admin"
-            )
+            self.ensure_user(username=admin_username, password=admin_password, role="admin")
         if str(trader_username or "").strip() and str(trader_password or "").strip():
-            self.ensure_user(
-                username=trader_username, password=trader_password, role="trader"
-            )
+            self.ensure_user(username=trader_username, password=trader_password, role="trader")
 
     def authenticate(self, *, username: str, password: str) -> AuthUser | None:
         clean_username = self._normalize_username(username)
@@ -343,9 +341,7 @@ class FileAuthStore(AuthStoreBase):
             ).fetchone()
         if row is None or int(row["is_active"] or 0) != 1:
             return None
-        _, computed_hash = self._hash_password(
-            password, salt_hex=str(row["password_salt"] or "")
-        )
+        _, computed_hash = self._hash_password(password, salt_hex=str(row["password_salt"] or ""))
         if not hmac.compare_digest(str(row["password_hash"] or ""), computed_hash):
             return None
         return AuthUser(
@@ -729,7 +725,7 @@ def get_auth_store(settings: Settings) -> AuthStore:
     cache_key = f"file:{Path(settings.auth_db_path).resolve()}"
     store = _auth_store_cache.get(cache_key)
     if store is None:
-        store = AuthStore(
+        store = FileAuthStore(
             db_path=settings.auth_db_path,
             session_ttl_hours=settings.auth_session_ttl_hours,
         )

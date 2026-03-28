@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
 import json
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -33,6 +34,7 @@ class BrokerEntryOrder:
     take_profit_limit_price: float | None = None
     stop_loss_stop_price: float | None = None
     stop_loss_limit_price: float | None = None
+    reference_price: float | None = None
 
 
 @dataclass
@@ -112,10 +114,78 @@ class BrokerAdapter:
 
 
 class PaperBrokerAdapter(BrokerAdapter):
+    def __init__(self) -> None:
+        self._orders: dict[str, dict] = {}
+
+    def _next_broker_order_id(self) -> str:
+        return f"paper-{uuid4().hex[:12]}"
+
+    def _timestamp(self) -> str:
+        return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    def _store_pending_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
+        broker_order_id = self._next_broker_order_id()
+        now = self._timestamp()
+        payload = {
+            "id": broker_order_id,
+            "client_order_id": broker_order_id,
+            "symbol": order.symbol,
+            "qty": str(order.qty),
+            "filled_qty": "0",
+            "side": order.side,
+            "type": order.order_type,
+            "time_in_force": order.time_in_force,
+            "order_class": order.order_class,
+            "limit_price": order.limit_price,
+            "stop_price": order.stop_price,
+            "extended_hours": order.extended_hours,
+            "status": "accepted",
+            "created_at": now,
+            "updated_at": now,
+        }
+        self._orders[broker_order_id] = payload
+        return BrokerOrderResult(broker_order_id=broker_order_id, status="PENDING", payload=payload)
+
+    def _paper_entry_fills_immediately(self, order: BrokerEntryOrder) -> bool:
+        if order.order_class != "simple":
+            return False
+        if order.order_type == "market":
+            return True
+        if order.order_type == "limit":
+            if order.limit_price is None or order.reference_price is None:
+                return False
+            if order.side == "sell":
+                return order.limit_price <= order.reference_price
+            return order.limit_price >= order.reference_price
+        return False
+
     def place_entry_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
+        if self._paper_entry_fills_immediately(order):
+            return BrokerOrderResult(
+                broker_order_id=None,
+                status="FILLED",
+                payload={
+                    "symbol": order.symbol,
+                    "qty": str(order.qty),
+                    "side": order.side,
+                    "type": order.order_type,
+                    "time_in_force": order.time_in_force,
+                    "order_class": order.order_class,
+                    "limit_price": order.limit_price,
+                    "stop_price": order.stop_price,
+                    "extended_hours": order.extended_hours,
+                    "status": "filled",
+                },
+            )
+        if order.order_type in {"limit", "stop", "stop_limit"} or order.order_class in {
+            "bracket",
+            "oco",
+            "oto",
+        }:
+            return self._store_pending_order(order)
         return BrokerOrderResult(
             broker_order_id=None,
-            status=("ACTIVE" if order.order_class in {"bracket", "oco", "oto"} else "FILLED"),
+            status="FILLED",
             payload={
                 "symbol": order.symbol,
                 "qty": str(order.qty),
@@ -126,7 +196,7 @@ class PaperBrokerAdapter(BrokerAdapter):
                 "limit_price": order.limit_price,
                 "stop_price": order.stop_price,
                 "extended_hours": order.extended_hours,
-                "status": "accepted",
+                "status": "filled",
             },
         )
 
@@ -170,10 +240,16 @@ class PaperBrokerAdapter(BrokerAdapter):
         return None
 
     def list_recent_orders(self, limit: int = 50) -> list[dict]:
-        return []
+        rows = sorted(
+            self._orders.values(),
+            key=lambda payload: payload.get("updated_at") or payload.get("created_at") or "",
+            reverse=True,
+        )
+        return [dict(order) for order in rows[:limit]]
 
     def get_order(self, broker_order_id: str) -> dict | None:
-        return None
+        payload = self._orders.get(broker_order_id)
+        return dict(payload) if payload is not None else None
 
     def get_session_state(self) -> str:
         return "regular_open"
@@ -196,6 +272,17 @@ class AlpacaBrokerAdapter(BrokerAdapter):
         self.market_tz = ZoneInfo("America/New_York")
         self._account_summary_cache: tuple[float, dict[str, float]] | None = None
         self._recent_orders_cache: tuple[float, int, list[dict]] | None = None
+
+    def _log_event(self, event: str, level: str = "info", **fields: object) -> None:
+        log_event(
+            event,
+            level=level,
+            **request_log_fields(
+                adapter="alpaca",
+                broker_mode=self.settings.broker_mode,
+                **fields,
+            ),
+        )
 
     def _client(self) -> httpx.Client:
         self._ensure_execution_allowed()
@@ -278,7 +365,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     def place_entry_order(self, order: BrokerEntryOrder) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "FILLED", "Alpaca paper credentials are missing for broker execution"
+                "broker.entry.submit",
+                "FILLED",
+                "Alpaca paper credentials are missing for broker execution",
+                symbol=order.symbol,
+                side=order.side,
+                order_type=order.order_type,
+                time_in_force=order.time_in_force,
+                order_class=order.order_class,
             )
         payload: dict[str, object] = {
             "symbol": order.symbol,
@@ -309,8 +403,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 data = response.json()
         except httpx.HTTPError as exc:
             return self._fallback_or_raise(
+                "broker.entry.submit",
                 "FILLED",
                 self._extract_http_error_message("Alpaca market order failed", exc),
+                symbol=order.symbol,
+                side=order.side,
+                order_type=order.order_type,
+                time_in_force=order.time_in_force,
+                order_class=order.order_class,
             )
         return BrokerOrderResult(data.get("id"), str(data.get("status", "accepted")).upper(), data)
 
@@ -332,7 +432,13 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "ACTIVE", "Alpaca paper credentials are missing for stop execution"
+                "broker.stop.submit",
+                "ACTIVE",
+                "Alpaca paper credentials are missing for stop execution",
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                stop_price=stop_price,
             )
         result = self.place_entry_order(
             BrokerEntryOrder(
@@ -357,7 +463,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "FILLED", "Alpaca paper credentials are missing for profit execution"
+                "broker.limit.submit",
+                "FILLED",
+                "Alpaca paper credentials are missing for profit execution",
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                limit_price=limit_price,
+                time_in_force=time_in_force,
             )
         return self.place_entry_order(
             BrokerEntryOrder(
@@ -376,7 +489,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
     ) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "ACTIVE", "Alpaca paper credentials are missing for runner execution"
+                "broker.trailing.submit",
+                "ACTIVE",
+                "Alpaca paper credentials are missing for runner execution",
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                trail=trail,
+                trail_unit=trail_unit,
             )
         payload = {
             "symbol": symbol,
@@ -396,15 +516,24 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 data = response.json()
         except httpx.HTTPError as exc:
             return self._fallback_or_raise(
+                "broker.trailing.submit",
                 "ACTIVE",
                 self._extract_http_error_message("Alpaca trailing stop failed", exc),
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                trail=trail,
+                trail_unit=trail_unit,
             )
         return BrokerOrderResult(data.get("id"), str(data.get("status", "new")).upper())
 
     def close_position(self, symbol: str) -> BrokerOrderResult:
         if not self.settings.has_alpaca_credentials:
             return self._fallback_or_raise(
-                "FILLED", "Alpaca paper credentials are missing for flatten execution"
+                "broker.flatten.submit",
+                "FILLED",
+                "Alpaca paper credentials are missing for flatten execution",
+                symbol=symbol,
             )
         try:
             with self._client() as client:
@@ -413,8 +542,10 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 data = response.json()
         except httpx.HTTPError as exc:
             return self._fallback_or_raise(
+                "broker.flatten.submit",
                 "FILLED",
                 self._extract_http_error_message("Alpaca close position failed", exc),
+                symbol=symbol,
             )
         return BrokerOrderResult(data.get("id"), "FILLED")
 

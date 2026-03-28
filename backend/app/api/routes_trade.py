@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps_auth import require_session, require_write_guard
+from app.core.observability import log_event, request_log_fields
 from app.db.session import get_db
 from app.schemas.cockpit import (
     MoveToBeRequest,
@@ -17,13 +18,22 @@ from app.schemas.cockpit import (
 from app.services.cockpit import CockpitService
 
 
+def _order_log_value(order: object, *names: str) -> object | None:
+    for name in names:
+        if hasattr(order, name):
+            return getattr(order, name)
+    return None
+
+
 def build_router(service: CockpitService) -> APIRouter:
     router = APIRouter(prefix="/api/trade", tags=["trade"], dependencies=[Depends(require_session)])
 
     @router.post("/preview", response_model=TradePreviewResponse)
     def preview(
         payload: TradePreviewRequest,
+        request: Request,
         db: Session = Depends(get_db),
+        session: dict = Depends(require_session),
         _: None = Depends(require_write_guard),
     ) -> TradePreviewResponse:
         try:
@@ -35,9 +45,9 @@ def build_router(service: CockpitService) -> APIRouter:
                     username=str(session["user"]["username"]),
                     symbol=payload.symbol.upper(),
                     side=payload.order.side,
-                    order_type=payload.order.orderType,
-                    time_in_force=payload.order.timeInForce,
-                    order_class=payload.order.orderClass,
+                    order_type=_order_log_value(payload.order, "orderType", "order_type"),
+                    time_in_force=_order_log_value(payload.order, "timeInForce", "time_in_force"),
+                    order_class=_order_log_value(payload.order, "orderClass", "order_class"),
                     outcome="success",
                 ),
             )
@@ -51,9 +61,9 @@ def build_router(service: CockpitService) -> APIRouter:
                     username=str(session["user"]["username"]),
                     symbol=payload.symbol.upper(),
                     side=payload.order.side,
-                    order_type=payload.order.orderType,
-                    time_in_force=payload.order.timeInForce,
-                    order_class=payload.order.orderClass,
+                    order_type=_order_log_value(payload.order, "orderType", "order_type"),
+                    time_in_force=_order_log_value(payload.order, "timeInForce", "time_in_force"),
+                    order_class=_order_log_value(payload.order, "orderClass", "order_class"),
                     outcome="error",
                     detail=str(exc),
                 ),
@@ -63,7 +73,9 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/enter", response_model=PositionView)
     async def enter(
         payload: TradeEnterRequest,
+        request: Request,
         db: Session = Depends(get_db),
+        session: dict = Depends(require_session),
         _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
@@ -75,9 +87,9 @@ def build_router(service: CockpitService) -> APIRouter:
                     username=str(session["user"]["username"]),
                     symbol=payload.symbol.upper(),
                     side=payload.order.side,
-                    order_type=payload.order.orderType,
-                    time_in_force=payload.order.timeInForce,
-                    order_class=payload.order.orderClass,
+                    order_type=_order_log_value(payload.order, "orderType", "order_type"),
+                    time_in_force=_order_log_value(payload.order, "timeInForce", "time_in_force"),
+                    order_class=_order_log_value(payload.order, "orderClass", "order_class"),
                     phase=response.phase,
                     outcome="success",
                 ),
@@ -92,9 +104,9 @@ def build_router(service: CockpitService) -> APIRouter:
                     username=str(session["user"]["username"]),
                     symbol=payload.symbol.upper(),
                     side=payload.order.side,
-                    order_type=payload.order.orderType,
-                    time_in_force=payload.order.timeInForce,
-                    order_class=payload.order.orderClass,
+                    order_type=_order_log_value(payload.order, "orderType", "order_type"),
+                    time_in_force=_order_log_value(payload.order, "timeInForce", "time_in_force"),
+                    order_class=_order_log_value(payload.order, "orderClass", "order_class"),
                     outcome="error",
                     detail=str(exc),
                 ),
@@ -104,7 +116,9 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/stops", response_model=PositionView)
     async def stops(
         payload: StopsRequest,
+        request: Request,
         db: Session = Depends(get_db),
+        session: dict = Depends(require_session),
         _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
@@ -138,7 +152,9 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/profit", response_model=PositionView)
     async def profit(
         payload: ProfitRequest,
+        request: Request,
         db: Session = Depends(get_db),
+        session: dict = Depends(require_session),
         _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
@@ -172,7 +188,9 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/flatten", response_model=PositionView)
     async def flatten(
         payload: MoveToBeRequest,
+        request: Request,
         db: Session = Depends(get_db),
+        session: dict = Depends(require_session),
         _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
@@ -204,7 +222,9 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/move_to_be", response_model=PositionView)
     async def move_to_be(
         payload: MoveToBeRequest,
+        request: Request,
         db: Session = Depends(get_db),
+        session: dict = Depends(require_session),
         _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:

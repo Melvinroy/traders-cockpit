@@ -61,6 +61,7 @@ class Settings:
     auth_cookie_name: str
     auth_cookie_samesite: str
     auth_cookie_secure: bool
+    auth_storage_mode: str
     auth_csrf_cookie_name: str
     auth_csrf_header_name: str
     auth_require_csrf: bool
@@ -170,6 +171,7 @@ class Settings:
             auth_cookie_secure=_as_bool(
                 os.getenv("AUTH_COOKIE_SECURE", auth_cookie_secure_default)
             ),
+            auth_storage_mode=auth_storage_mode,
             auth_csrf_cookie_name=os.getenv(
                 "AUTH_CSRF_COOKIE_NAME", "traders_cockpit_csrf"
             ).strip(),

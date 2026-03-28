@@ -2,6 +2,8 @@ from __future__ import annotations
 
 # ruff: noqa: E402
 
+import json
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -44,9 +46,15 @@ from app.models.entities import (
     TradeLogEntity,
 )  # noqa: E402
 from app.schemas.cockpit import TrancheMode  # noqa: E402
+from app.services.auth import FAILED_LOGIN_LIMIT, get_auth_store  # noqa: E402
 from app.api import deps_auth  # noqa: E402
+from app import main as main_module  # noqa: E402
 from app.core.config import Settings, _normalize_database_url  # noqa: E402
-from app.services.auth import get_auth_store  # noqa: E402
+from app.core.observability import (  # noqa: E402
+    REQUEST_ID_HEADER,
+    bind_request_id,
+    reset_request_id,
+)
 
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)

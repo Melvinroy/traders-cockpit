@@ -9,6 +9,7 @@ import time
 import httpx
 
 from app.core.config import Settings
+from app.core.observability import log_event, request_log_fields
 
 MOCK_MARKET_DATA: dict[str, dict[str, float]] = {
     "AAPL": {
@@ -74,9 +75,7 @@ class SetupMarketData:
 
 
 class MockMarketDataAdapter:
-    def get_setup_data(
-        self, symbol: str, fallback_reason: str | None = None
-    ) -> SetupMarketData:
+    def get_setup_data(self, symbol: str, fallback_reason: str | None = None) -> SetupMarketData:
         payload = MOCK_MARKET_DATA.get(symbol.upper(), MOCK_MARKET_DATA["AAPL"])
         return SetupMarketData(
             symbol=symbol.upper(),
@@ -102,6 +101,17 @@ class AlpacaPolygonMarketDataAdapter:
         self._market_tz = ZoneInfo("America/New_York")
         self._setup_cache: dict[str, tuple[float, SetupMarketData]] = {}
 
+    def _log_event(self, event: str, level: str = "info", **fields: object) -> None:
+        log_event(
+            event,
+            level=level,
+            **request_log_fields(
+                provider="alpaca_market_data",
+                broker_mode=self.settings.broker_mode,
+                **fields,
+            ),
+        )
+
     def _data_client(self) -> httpx.Client:
         return httpx.Client(
             base_url=self.settings.alpaca_data_base_url,
@@ -122,11 +132,7 @@ class AlpacaPolygonMarketDataAdapter:
             timeout=4.0,
         )
 
-    def _fail_or_fallback(
-        self, symbol: str, reason: str, message: str
-    ) -> SetupMarketData:
-        if self.settings.broker_mode in {"alpaca_paper", "alpaca_live"}:
-            raise ValueError(message)
+    def _fail_or_fallback(self, symbol: str, reason: str, message: str) -> SetupMarketData:
         if self.settings.allow_controller_mock:
             self._log_event(
                 "market_data.setup.fallback",
@@ -242,9 +248,7 @@ class AlpacaPolygonMarketDataAdapter:
             return None, None
         return quote, self._parse_quote_timestamp(str(quote.get("t") or ""))
 
-    def _daily_bars(
-        self, client: httpx.Client, symbol: str, *, limit: int = 60
-    ) -> list[dict]:
+    def _daily_bars(self, client: httpx.Client, symbol: str, *, limit: int = 60) -> list[dict]:
         end = datetime.now(UTC)
         start = end - timedelta(days=max(limit * 2, 45))
         response = client.get(
@@ -315,9 +319,7 @@ class AlpacaPolygonMarketDataAdapter:
             return None
         return SetupMarketData(**payload.__dict__)
 
-    def _store_cached_setup(
-        self, symbol: str, payload: SetupMarketData
-    ) -> SetupMarketData:
+    def _store_cached_setup(self, symbol: str, payload: SetupMarketData) -> SetupMarketData:
         self._setup_cache[symbol.upper()] = (time.monotonic(), payload)
         return SetupMarketData(**payload.__dict__)
 
@@ -334,33 +336,23 @@ class AlpacaPolygonMarketDataAdapter:
         try:
             upper_symbol = symbol.upper()
             with ThreadPoolExecutor(max_workers=3) as executor:
-                snapshot_future = executor.submit(
-                    self._load_snapshot_payload, upper_symbol
-                )
+                snapshot_future = executor.submit(self._load_snapshot_payload, upper_symbol)
                 daily_bars_future = executor.submit(self._load_daily_bars, upper_symbol)
                 clock_future = executor.submit(self._market_clock)
                 snapshot_payload = snapshot_future.result()
                 daily_bars = daily_bars_future.result()
                 clock_payload = clock_future.result()
             snapshot_quote = (
-                snapshot_payload.get("latestQuote")
-                if isinstance(snapshot_payload, dict)
-                else None
+                snapshot_payload.get("latestQuote") if isinstance(snapshot_payload, dict) else None
             )
             latest_trade = (
-                snapshot_payload.get("latestTrade")
-                if isinstance(snapshot_payload, dict)
-                else None
+                snapshot_payload.get("latestTrade") if isinstance(snapshot_payload, dict) else None
             )
             daily_bar = (
-                snapshot_payload.get("dailyBar")
-                if isinstance(snapshot_payload, dict)
-                else None
+                snapshot_payload.get("dailyBar") if isinstance(snapshot_payload, dict) else None
             )
             prev_daily_bar = (
-                snapshot_payload.get("prevDailyBar")
-                if isinstance(snapshot_payload, dict)
-                else None
+                snapshot_payload.get("prevDailyBar") if isinstance(snapshot_payload, dict) else None
             )
             with self._data_client() as client:
                 quote: dict | None = None
@@ -374,9 +366,7 @@ class AlpacaPolygonMarketDataAdapter:
                     quote_timestamp = snapshot_timestamp
                     quote_state = "cached_quote"
                 else:
-                    latest_quote, latest_timestamp = self._latest_quote(
-                        client, symbol.upper()
-                    )
+                    latest_quote, latest_timestamp = self._latest_quote(client, symbol.upper())
                     if self._has_usable_bid_ask(latest_quote):
                         quote = latest_quote
                         quote_timestamp = latest_timestamp
@@ -393,9 +383,7 @@ class AlpacaPolygonMarketDataAdapter:
             if session_state != "regular_open" and quote_state == "live_quote":
                 quote_state = "cached_quote"
             if not quote:
-                raise ValueError(
-                    f"Alpaca quote unavailable for {upper_symbol} right now."
-                )
+                raise ValueError(f"Alpaca quote unavailable for {upper_symbol} right now.")
             last_trade_price = self._parse_float((latest_trade or {}).get("p"))
             fallback = self.fallback.get_setup_data(symbol)
             bid = self._parse_float(quote.get("bp"))
@@ -405,31 +393,20 @@ class AlpacaPolygonMarketDataAdapter:
             if ask <= 0:
                 ask = last_trade_price
             if bid <= 0 or ask <= 0:
-                raise ValueError(
-                    f"Alpaca quote unavailable for {upper_symbol} right now."
-                )
+                raise ValueError(f"Alpaca quote unavailable for {upper_symbol} right now.")
             if not isinstance(daily_bar, dict):
-                raise ValueError(
-                    f"Alpaca daily bar unavailable for {upper_symbol} right now."
-                )
+                raise ValueError(f"Alpaca daily bar unavailable for {upper_symbol} right now.")
             lod = self._parse_float(daily_bar.get("l"))
             hod = self._parse_float(daily_bar.get("h"))
-            prev_close = self._parse_float(
-                (prev_daily_bar or {}).get("c"), fallback.prev_close
-            )
+            prev_close = self._parse_float((prev_daily_bar or {}).get("c"), fallback.prev_close)
             atr14 = self._atr14(daily_bars)
             if lod <= 0 or hod <= 0:
-                raise ValueError(
-                    f"Alpaca daily range unavailable for {upper_symbol} right now."
-                )
+                raise ValueError(f"Alpaca daily range unavailable for {upper_symbol} right now.")
             if atr14 is None or atr14 <= 0:
-                raise ValueError(
-                    f"Alpaca ATR14 unavailable for {upper_symbol} right now."
-                )
+                raise ValueError(f"Alpaca ATR14 unavailable for {upper_symbol} right now.")
             entry_basis = (
                 "bid_ask_midpoint"
-                if self._parse_float(quote.get("bp")) > 0
-                and self._parse_float(quote.get("ap")) > 0
+                if self._parse_float(quote.get("bp")) > 0 and self._parse_float(quote.get("ap")) > 0
                 else "hybrid_quote_trade_midpoint"
             )
             payload = SetupMarketData(
@@ -447,9 +424,7 @@ class AlpacaPolygonMarketDataAdapter:
                 entry_basis=entry_basis,
                 bid=bid,
                 ask=ask,
-                last=round(
-                    last_trade_price if last_trade_price > 0 else (bid + ask) / 2, 2
-                ),
+                last=round(last_trade_price if last_trade_price > 0 else (bid + ask) / 2, 2),
                 lod=lod,
                 hod=hod,
                 prev_close=prev_close,
