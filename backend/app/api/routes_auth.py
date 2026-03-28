@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.core.config import Settings
@@ -82,12 +84,13 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
             **request_log_fields(request, username=payload.username),
         )
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    auth_store.clear_login_failures(username=payload.username, ip_addr=ip_addr)
+    auth_store.revoke_session(session_token=request.cookies.get(settings.auth_cookie_name))
     session_token, session_data = auth_store.create_session(
         user=user,
         user_agent=request.headers.get("user-agent"),
         ip_addr=ip_addr,
     )
+    csrf_token = secrets.token_urlsafe(32)
     response.set_cookie(
         settings.auth_cookie_name,
         session_token,
@@ -95,9 +98,12 @@ def login(payload: LoginRequest, request: Request, response: Response) -> LoginR
         samesite=settings.auth_cookie_samesite,
         secure=settings.auth_cookie_secure,
     )
-    log_event(
-        "auth.login.succeeded",
-        **request_log_fields(request, username=user.username, role=user.role),
+    response.set_cookie(
+        settings.auth_csrf_cookie_name,
+        csrf_token,
+        httponly=False,
+        samesite=settings.auth_cookie_samesite,
+        secure=settings.auth_cookie_secure,
     )
     return LoginResponse(
         username=user.username,
@@ -118,11 +124,10 @@ def logout(request: Request, response: Response) -> dict[str, bool]:
         samesite=settings.auth_cookie_samesite,
         secure=settings.auth_cookie_secure,
     )
-    log_event(
-        "auth.logout",
-        **request_log_fields(
-            request,
-            username=str(session["user"]["username"]) if session is not None else None,
-        ),
+    response.delete_cookie(
+        settings.auth_csrf_cookie_name,
+        httponly=False,
+        samesite=settings.auth_cookie_samesite,
+        secure=settings.auth_cookie_secure,
     )
     return {"ok": True}

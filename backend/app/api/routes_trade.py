@@ -3,8 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps_auth import require_session
-from app.core.observability import log_event, request_log_fields
+from app.api.deps_auth import require_session, require_write_guard
 from app.db.session import get_db
 from app.schemas.cockpit import (
     MoveToBeRequest,
@@ -24,9 +23,8 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/preview", response_model=TradePreviewResponse)
     def preview(
         payload: TradePreviewRequest,
-        request: Request,
         db: Session = Depends(get_db),
-        session: dict = Depends(require_session),
+        _: None = Depends(require_write_guard),
     ) -> TradePreviewResponse:
         try:
             response = service.preview_trade(db, payload)
@@ -65,9 +63,8 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/enter", response_model=PositionView)
     async def enter(
         payload: TradeEnterRequest,
-        request: Request,
         db: Session = Depends(get_db),
-        session: dict = Depends(require_session),
+        _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
             response = await service.enter_trade(db, payload)
@@ -107,9 +104,8 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/stops", response_model=PositionView)
     async def stops(
         payload: StopsRequest,
-        request: Request,
         db: Session = Depends(get_db),
-        session: dict = Depends(require_session),
+        _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
             response = await service.apply_stops(db, payload)
@@ -142,9 +138,8 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/profit", response_model=PositionView)
     async def profit(
         payload: ProfitRequest,
-        request: Request,
         db: Session = Depends(get_db),
-        session: dict = Depends(require_session),
+        _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
             response = await service.execute_profit_plan(db, payload)
@@ -177,9 +172,8 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/flatten", response_model=PositionView)
     async def flatten(
         payload: MoveToBeRequest,
-        request: Request,
         db: Session = Depends(get_db),
-        session: dict = Depends(require_session),
+        _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
             response = await service.flatten(db, payload.symbol)
@@ -210,9 +204,8 @@ def build_router(service: CockpitService) -> APIRouter:
     @router.post("/move_to_be", response_model=PositionView)
     async def move_to_be(
         payload: MoveToBeRequest,
-        request: Request,
         db: Session = Depends(get_db),
-        session: dict = Depends(require_session),
+        _: None = Depends(require_write_guard),
     ) -> PositionView:
         try:
             response = await service.move_to_be(db, payload.symbol)

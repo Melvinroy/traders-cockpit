@@ -133,7 +133,7 @@ docker compose --env-file .env up --build -d
 | PostgreSQL | localhost:55432 |
 | Redis | localhost:56379 |
 
-Current repo defaults:
+Default login: `admin` / `change-me-admin`
 
 - `.env.example` is the deterministic local-dev contract
 - `.env.production.example` is the hosted staging/production contract
@@ -237,11 +237,13 @@ User Browser
 
 Key backend layers:
 
-- `backend/app/api/`: route handlers for auth, account, market, positions, and trade actions.
-- `backend/app/services/cockpit.py`: sizing, lifecycle transitions, order hierarchy, and safety checks.
-- `backend/app/adapters/broker.py`: paper and Alpaca execution adapters.
-- `backend/app/adapters/market_data.py`: quote/session/technical context with fallback behavior.
-- `backend/app/ws/`: websocket fanout manager.
+- `app/api/` — Route handlers (auth, account, market, positions, trade)
+- `app/services/cockpit.py` — All business logic: sizing, lifecycle, order hierarchy, safety checks
+- `app/adapters/broker.py` — `PaperBrokerAdapter` (sim) and `AlpacaBrokerAdapter` (real execution)
+- `app/adapters/market_data.py` — Alpaca/Polygon quotes with deterministic fallback
+- `app/ws/manager.py` — Redis pub/sub fanout with single-process fallback
+- `scripts/dev/rebuild_position_projections.py` — rebuild projection payloads from current backend state
+- `scripts/dev/check_broker_paper_drift.py` — compare local broker-paper state with broker order truth and emit a pass/fail summary
 
 For a fuller breakdown, see [docs/architecture/OVERVIEW.md](docs/architecture/OVERVIEW.md).
 
@@ -302,18 +304,13 @@ Copy `.env.example` to `.env` for deterministic local development. Use `.env.pro
 
 | Variable | Default | Description |
 |---|---|---|
-| `AUTH_REQUIRE_LOGIN` | `true` | Enforces login before protected actions. |
-| `AUTH_SESSION_TTL_HOURS` | `24` | Session cookie lifetime. |
-| `AUTH_COOKIE_NAME` | `traders_cockpit_session` | Session cookie name. |
-| `AUTH_COOKIE_SAMESITE` | `lax` | Use `none` for cross-origin hosted deployments. |
-| `AUTH_COOKIE_SECURE` | `false` | Set `true` for TLS-backed staging or production. |
-| `AUTH_STORAGE_MODE` | `file` | Auth persistence backend. Use `database` for hosted staging/production. |
-| `AUTH_DB_PATH` | `./data/auth.db` | Local auth/session store path when `AUTH_STORAGE_MODE=file`. |
-| `AUTH_SEED_USERS` | `true` | Seeds local admin and trader users. |
-| `AUTH_ADMIN_USERNAME` | `admin` | Admin login name. |
-| `AUTH_ADMIN_PASSWORD` | `change-me-admin` | Placeholder admin password; override immediately. |
-| `AUTH_TRADER_USERNAME` | `trader` | Trader login name. |
-| `AUTH_TRADER_PASSWORD` | `change-me-trader` | Placeholder trader password; override immediately. |
+| `AUTH_REQUIRE_LOGIN` | `true` | Enforce login before access |
+| `AUTH_ADMIN_USERNAME` | `admin` | Admin account username |
+| `AUTH_ADMIN_PASSWORD` | `change-me-admin` | **Change this in production** |
+| `AUTH_TRADER_USERNAME` | `trader` | Trader account username |
+| `AUTH_SESSION_TTL_HOURS` | `24` | Session cookie lifetime |
+| `AUTH_COOKIE_SAMESITE` | `lax` | Set `none` for cross-origin hosted deployments |
+| `AUTH_COOKIE_SECURE` | `false` | Set `true` in staging/production |
 
 ### Broker and market data
 
