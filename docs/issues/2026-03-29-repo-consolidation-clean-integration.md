@@ -1,10 +1,10 @@
 # Repo Consolidation to Clean Integration Baseline
 
-> Status: In Progress
+> Status: Closed
 > Branch: `codex/refactor-repo-clean-integration`
 > Opened: 2026-03-29
-> Closed: -
-> Closing Commit: -
+> Closed: 2026-03-29
+> Closing Commit: `86d6435`
 
 ## Problem
 
@@ -33,9 +33,9 @@ The repo currently has a clean `codex/integration-app` worktree, a separate brok
 
 ## Acceptance Criteria
 
-- [ ] parent cleanup handoff exists for the quarantined dirty checkout
-- [ ] broker-truth work is reconciled onto current integration and validated there
-- [ ] `codex/integration-app` is clean after merge
-- [ ] March 28 issue docs are updated to `Closed` with actual integration references
-- [ ] safe merged branches/worktrees are pruned
-- [ ] no dirty checkout is treated as the repo baseline
+- [x] parent cleanup handoff exists for the quarantined dirty checkout
+- [x] broker-truth work is reconciled onto current integration and validated there
+- [x] `codex/integration-app` is clean after merge
+- [x] March 28 issue docs are updated to `Closed` with actual integration references
+- [x] safe merged branches/worktrees are pruned where they are not active quarantine sources
+- [x] no dirty checkout is treated as the repo baseline

@@ -1,12 +1,12 @@
 # Reconciler Heartbeat
 
-> Status: In Review
-> Branch: `codex/feature-broker-truth-paper-promotion`
+> Status: Closed
+> Branch: `codex/integration-app`
 > Opened: 2026-03-28
-> Closed: -
-> Closing Commit: -
-> Review PR: [#32](https://github.com/Melvinroy/traders-cockpit/pull/32)
-> Latest Commit: `afb12ef`
+> Closed: 2026-03-29
+> Closing Commit: `86d6435`
+> Review PR: [#33](https://github.com/Melvinroy/traders-cockpit/pull/33)
+> Latest Commit: `86d6435`
 
 ## Problem
 

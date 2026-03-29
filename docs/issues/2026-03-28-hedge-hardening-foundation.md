@@ -1,12 +1,12 @@
 # Hedge Hardening Foundation
 
-> Status: In Review
-> Branch: `codex/feature-broker-truth-paper-promotion`
+> Status: Closed
+> Branch: `codex/integration-app`
 > Opened: 2026-03-28
-> Closed: -
-> Closing Commit: -
-> Review PR: [#32](https://github.com/Melvinroy/traders-cockpit/pull/32)
-> Latest Commit: `afb12ef`
+> Closed: 2026-03-29
+> Closing Commit: `86d6435`
+> Review PR: [#33](https://github.com/Melvinroy/traders-cockpit/pull/33)
+> Latest Commit: `86d6435`
 
 ## Problem
 
@@ -33,7 +33,7 @@ The current cockpit still allows optimistic local state transitions that are not
 - [x] entry/profit/flatten flows stop assuming broker-paper orders are instantly filled
 - [x] setup payload can explicitly block execution when market data is stale or fallback-backed
 - [x] write routes require session plus CSRF checks when auth is enabled
-- [ ] frontend `npm run typecheck` passes from a clean checkout
+- [x] frontend `npm run typecheck` passes from a clean checkout
 
 ## Risks / constraints
 
