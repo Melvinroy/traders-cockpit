@@ -10,7 +10,9 @@ from app.services.cockpit import CockpitService
 
 
 def build_router(service: CockpitService) -> APIRouter:
-    router = APIRouter(prefix="/api", tags=["market"], dependencies=[Depends(require_session)])
+    router = APIRouter(
+        prefix="/api", tags=["market"], dependencies=[Depends(require_session)]
+    )
 
     @router.get("/setup/{symbol}", response_model=SetupResponse)
     def get_setup(symbol: str, db: Session = Depends(get_db)) -> SetupResponse:

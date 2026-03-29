@@ -62,6 +62,10 @@ class Settings:
     auth_cookie_samesite: str
     auth_cookie_secure: bool
     auth_storage_mode: str
+    auth_csrf_cookie_name: str
+    auth_csrf_header_name: str
+    auth_require_csrf: bool
+    webhook_secret_header_name: str
     auth_db_path: str
     auth_seed_users: bool
     auth_admin_username: str
@@ -72,6 +76,7 @@ class Settings:
     redis_url: str
     redis_channel_prefix: str
     cors_origins: list[str]
+    trusted_origins: list[str]
     broker_mode: str
     allow_live_trading: bool
     allow_controller_mock: bool
@@ -88,6 +93,12 @@ class Settings:
     max_position_notional_pct: float
     daily_loss_limit_pct: float
     max_open_positions: int
+    trading_enabled: bool
+    disabled_symbols: list[str]
+    max_quote_age_seconds: int
+    reconcile_fast_interval_seconds: int
+    reconcile_slow_interval_seconds: int
+    max_reconcile_age_seconds: int
     ops_api_key: str
     ops_admin_api_key: str
     ops_signing_secret: str
@@ -142,6 +153,12 @@ class Settings:
             if app_env == "test" or allow_sqlite_fallback
             else "postgresql://traders_cockpit:traders_cockpit@127.0.0.1:55432/traders_cockpit"
         )
+        broker_mode_raw = os.getenv("BROKER_MODE", "paper").strip().lower()
+        broker_mode = {
+            "sim_paper": "paper",
+            "broker_paper": "alpaca_paper",
+            "live": "alpaca_live",
+        }.get(broker_mode_raw, broker_mode_raw)
         return cls(
             app_env=app_env,
             app_default_role=app_default_role,
@@ -155,6 +172,19 @@ class Settings:
                 os.getenv("AUTH_COOKIE_SECURE", auth_cookie_secure_default)
             ),
             auth_storage_mode=auth_storage_mode,
+            auth_csrf_cookie_name=os.getenv(
+                "AUTH_CSRF_COOKIE_NAME", "traders_cockpit_csrf"
+            ).strip(),
+            auth_csrf_header_name=os.getenv("AUTH_CSRF_HEADER_NAME", "X-CSRF-Token").strip(),
+            auth_require_csrf=_as_bool(
+                os.getenv(
+                    "AUTH_REQUIRE_CSRF",
+                    "true" if app_env in {"staging", "production"} else "false",
+                )
+            ),
+            webhook_secret_header_name=os.getenv(
+                "WEBHOOK_SECRET_HEADER_NAME", "X-Webhook-Secret"
+            ).strip(),
             auth_db_path=auth_db_path,
             auth_seed_users=_as_bool(os.getenv("AUTH_SEED_USERS", "true"), True),
             auth_admin_username=os.getenv("AUTH_ADMIN_USERNAME", "admin").strip(),
@@ -172,9 +202,26 @@ class Settings:
                 ).split(",")
                 if item.strip()
             ],
-            broker_mode=os.getenv("BROKER_MODE", "paper").strip().lower(),
+            trusted_origins=[
+                item.strip()
+                for item in os.getenv(
+                    "TRUSTED_ORIGINS",
+                    os.getenv(
+                        "CORS_ORIGINS",
+                        "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:3010,http://localhost:3010",
+                    ),
+                ).split(",")
+                if item.strip()
+            ],
+            broker_mode=broker_mode,
             allow_live_trading=_as_bool(os.getenv("ALLOW_LIVE_TRADING", "false")),
-            allow_controller_mock=_as_bool(os.getenv("ALLOW_CONTROLLER_MOCK", "true"), True),
+            allow_controller_mock=_as_bool(
+                os.getenv(
+                    "ALLOW_CONTROLLER_MOCK",
+                    "true" if app_env in {"development", "test"} else "false",
+                ),
+                app_env in {"development", "test"},
+            ),
             live_confirmation_token=os.getenv("LIVE_CONFIRMATION_TOKEN", "").strip(),
             alpaca_api_key_id=os.getenv("ALPACA_API_KEY_ID", "").strip(),
             alpaca_api_secret_key=os.getenv("ALPACA_API_SECRET_KEY", "").strip(),
@@ -189,13 +236,28 @@ class Settings:
             ).strip(),
             massive_api_key=os.getenv("MASSIVE_API_KEY", "") or os.getenv("POLYGON_API_KEY", ""),
             massive_api_base_url=os.getenv(
-                "MASSIVE_API_BASE_URL", os.getenv("POLYGON_API_BASE_URL", "https://api.polygon.io")
+                "MASSIVE_API_BASE_URL",
+                os.getenv("POLYGON_API_BASE_URL", "https://api.polygon.io"),
             ).strip(),
             default_account_equity=float(os.getenv("DEFAULT_ACCOUNT_EQUITY", "100000")),
             default_risk_pct=float(os.getenv("DEFAULT_RISK_PCT", "1")),
             max_position_notional_pct=float(os.getenv("MAX_POSITION_NOTIONAL_PCT", "100")),
             daily_loss_limit_pct=float(os.getenv("DAILY_LOSS_LIMIT_PCT", "2")),
             max_open_positions=max(1, int(os.getenv("MAX_OPEN_POSITIONS", "6"))),
+            trading_enabled=_as_bool(os.getenv("TRADING_ENABLED", "true"), True),
+            disabled_symbols=[
+                item.strip().upper()
+                for item in os.getenv("DISABLED_SYMBOLS", "").split(",")
+                if item.strip()
+            ],
+            max_quote_age_seconds=max(1, int(os.getenv("MAX_QUOTE_AGE_SECONDS", "15"))),
+            reconcile_fast_interval_seconds=max(
+                1, int(os.getenv("RECONCILE_FAST_INTERVAL_SECONDS", "3"))
+            ),
+            reconcile_slow_interval_seconds=max(
+                1, int(os.getenv("RECONCILE_SLOW_INTERVAL_SECONDS", "20"))
+            ),
+            max_reconcile_age_seconds=max(1, int(os.getenv("MAX_RECONCILE_AGE_SECONDS", "45"))),
             ops_api_key=os.getenv("OPS_API_KEY", "").strip(),
             ops_admin_api_key=os.getenv("OPS_ADMIN_API_KEY", "").strip(),
             ops_signing_secret=os.getenv("OPS_SIGNING_SECRET", "").strip(),
@@ -228,6 +290,14 @@ class Settings:
         return self.broker_mode in {"alpaca_paper", "alpaca_live"}
 
     @property
+    def normalized_broker_mode(self) -> str:
+        return {
+            "paper": "sim_paper",
+            "alpaca_paper": "broker_paper",
+            "alpaca_live": "live",
+        }.get(self.broker_mode, self.broker_mode)
+
+    @property
     def broker_execution_provider(self) -> str:
         if self.uses_alpaca_broker and self.has_alpaca_credentials:
             return self.broker_mode
@@ -248,3 +318,24 @@ class Settings:
             and self.allow_live_trading
             and bool(self.live_confirmation_token)
         )
+
+    def validate_runtime(self) -> None:
+        if self.is_production:
+            if self.auth_seed_users:
+                raise ValueError("AUTH_SEED_USERS must be disabled in production.")
+            weak_passwords = {"", "change-me-admin", "change-me-trader"}
+            if (
+                self.auth_admin_password in weak_passwords
+                or self.auth_trader_password in weak_passwords
+            ):
+                raise ValueError("Unsafe default auth credentials are not allowed in production.")
+        if self.app_env not in {"production", "staging"} and self.broker_mode == "alpaca_live":
+            raise ValueError("Non-production environments cannot point at live broker mode.")
+        if (
+            self.broker_mode in {"alpaca_paper", "alpaca_live"}
+            and self.allow_controller_mock
+            and self.app_env not in {"development", "test"}
+        ):
+            raise ValueError(
+                "Mock execution/data cannot coexist with broker-backed modes outside development."
+            )

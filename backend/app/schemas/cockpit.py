@@ -54,15 +54,29 @@ class Tranche(BaseModel):
     qty: int
     stop: float
     target: float | None = None
-    status: Literal["active", "sold", "canceled"] = "active"
+    status: Literal["active", "pending_exit", "partially_filled", "sold", "closed", "canceled"] = (
+        "active"
+    )
     exitPrice: float | None = None
     exitFilledAt: datetime | None = None
     exitOrderType: str | None = None
+    filledQty: int = 0
+    remainingQty: int | None = None
     mode: Literal["limit", "runner"] = "limit"
     trail: float = 2.0
     trailUnit: Literal["$", "%"] = "$"
     label: str
     runnerStop: float | None = None
+
+
+class OrderFillView(BaseModel):
+    id: str
+    brokerOrderId: str | None = None
+    symbol: str
+    qty: int
+    price: float
+    occurredAt: datetime
+    intentId: str | None = None
 
 
 class OrderView(BaseModel):
@@ -85,12 +99,20 @@ class OrderView(BaseModel):
     updatedAt: datetime | None = None
     filledAt: datetime | None = None
     fillPrice: float | None = None
+    intentId: str | None = None
+    intentStatus: str | None = None
+    brokerStatus: str | None = None
+    reconcileStatus: str | None = None
+    fills: list[OrderFillView] = Field(default_factory=list)
 
 
 class PositionView(BaseModel):
     symbol: str
     phase: str
+    side: EntrySide = "buy"
     livePrice: float
+    markState: Literal["live", "frozen"] = "frozen"
+    markLabel: str | None = None
     setup: dict
     tranches: list[Tranche]
     orders: list[OrderView]
@@ -99,6 +121,15 @@ class PositionView(BaseModel):
     rootOrderId: str | None = None
     stopMode: int = 0
     trancheCount: int = 3
+    intentId: str | None = None
+    intentStatus: str | None = None
+    brokerOrderId: str | None = None
+    brokerStatus: str | None = None
+    reconcileStatus: str | None = None
+    blockingReasons: list[str] = Field(default_factory=list)
+    projectionVersion: int = 1
+    lastReconciledAt: datetime | None = None
+    fills: list[OrderFillView] = Field(default_factory=list)
 
 
 class LogEntry(BaseModel):
@@ -125,11 +156,22 @@ class SetupResponse(BaseModel):
     )
     quoteState: Literal["live_quote", "cached_quote", "quote_unavailable"] = "quote_unavailable"
     entryBasis: str = "midpoint"
+    dataQuality: Literal["live", "fallback", "stale", "blocked"] = "blocked"
+    quoteAgeMs: int | None = None
+    reconcileStatus: Literal["synchronized", "pending", "stale"] = "synchronized"
+    lastReconciledAt: datetime | None = None
+    isExecutable: bool = False
+    executionBlockingReasons: list[str] = Field(default_factory=list)
     stopReferenceDefault: Literal["lod", "atr", "manual"] = "lod"
+    shortStopReferenceDefault: Literal["lod", "atr", "manual"] = "lod"
     lodIsValid: bool = True
     atrIsValid: bool = True
+    hodIsValid: bool = True
+    shortAtrIsValid: bool = True
     lodStop: float
     atrStop: float
+    hodStop: float
+    shortAtrStop: float
     manualStopWarning: str | None = None
     bid: float
     ask: float
@@ -171,9 +213,8 @@ class TradePreviewResponse(BaseModel):
     shares: int
     dollarRisk: float
     sizingWarning: str | None = None
-    orderType: EntryOrderType = "limit"
-    timeInForce: TimeInForce = "day"
-    orderClass: OrderClass = "simple"
+    isExecutable: bool = False
+    blockingReasons: list[str] = Field(default_factory=list)
 
 
 class TradePreviewRequest(BaseModel):
@@ -225,6 +266,12 @@ class AccountSettingsView(BaseModel):
     daily_loss_limit_pct: float
     max_open_positions: int
     live_disabled_reason: str | None = None
+    reconcile_status: str = "synchronized"
+    last_reconciled_at: datetime | None = None
+    reconcileStatus: str = "synchronized"
+    lastReconciledAt: datetime | None = None
+    isExecutable: bool = True
+    executionBlockingReasons: list[str] = Field(default_factory=list)
 
 
 class AccountSettingsUpdate(BaseModel):

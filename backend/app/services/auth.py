@@ -36,9 +36,43 @@ class AuthStoreBase:
     def _now() -> datetime:
         return datetime.now(UTC)
 
-    @classmethod
-    def _now_iso(cls) -> str:
-        return cls._now().isoformat()
+    @staticmethod
+    def _now_iso() -> str:
+        return AuthStoreBase._now().isoformat()
+
+    def _init_db(self) -> None:
+        with self._connect() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS auth_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    role TEXT NOT NULL,
+                    password_salt TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_token_hash TEXT NOT NULL UNIQUE,
+                    user_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT,
+                    user_agent TEXT,
+                    ip_addr TEXT,
+                    FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+                )
+                """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_active
+                ON auth_sessions(user_id, revoked_at, expires_at)
+                """)
+            conn.commit()
 
     @staticmethod
     def _normalize_role(raw: object) -> str:
@@ -55,12 +89,7 @@ class AuthStoreBase:
             salt = bytes.fromhex(str(salt_hex))
         else:
             salt = os.urandom(16)
-        digest = hashlib.pbkdf2_hmac(
-            "sha256",
-            str(password or "").encode("utf-8"),
-            salt,
-            210_000,
-        )
+        digest = hashlib.pbkdf2_hmac("sha256", str(password or "").encode("utf-8"), salt, 210_000)
         return salt.hex(), digest.hex()
 
     @staticmethod
@@ -252,8 +281,7 @@ class FileAuthStore(AuthStoreBase):
         now = self._now_iso()
         with self._connect() as conn:
             existing = conn.execute(
-                "SELECT id FROM auth_users WHERE username = ?",
-                (clean_username,),
+                "SELECT id FROM auth_users WHERE username = ?", (clean_username,)
             ).fetchone()
             if existing is None:
                 conn.execute(
@@ -280,6 +308,22 @@ class FileAuthStore(AuthStoreBase):
                     (clean_role, salt_hex, hash_hex, now, int(existing["id"])),
                 )
             conn.commit()
+
+    def bootstrap_users(
+        self,
+        *,
+        admin_username: str,
+        admin_password: str,
+        trader_username: str,
+        trader_password: str,
+        seed_enabled: bool = True,
+    ) -> None:
+        if not seed_enabled:
+            return
+        if str(admin_username or "").strip() and str(admin_password or "").strip():
+            self.ensure_user(username=admin_username, password=admin_password, role="admin")
+        if str(trader_username or "").strip() and str(trader_password or "").strip():
+            self.ensure_user(username=trader_username, password=trader_password, role="trader")
 
     def authenticate(self, *, username: str, password: str) -> AuthUser | None:
         clean_username = self._normalize_username(username)
@@ -316,7 +360,7 @@ class FileAuthStore(AuthStoreBase):
     ) -> tuple[str, dict[str, Any]]:
         token = secrets.token_urlsafe(48)
         token_hash = self._session_token_hash(token)
-        now = self._now()
+        now = datetime.now(UTC)
         now_iso = now.isoformat()
         expires_at = (now + timedelta(hours=self.session_ttl_hours)).isoformat()
         with self._connect() as conn:
@@ -353,7 +397,7 @@ class FileAuthStore(AuthStoreBase):
         token = str(session_token or "").strip()
         if not token:
             return None
-        now = self._now()
+        now = datetime.now(UTC)
         now_iso = now.isoformat()
         token_hash = self._session_token_hash(token)
         with self._connect() as conn:
