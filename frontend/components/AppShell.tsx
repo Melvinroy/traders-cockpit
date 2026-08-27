@@ -39,10 +39,7 @@ export function AppShell() {
         aria-hidden={!authenticated}
         style={!authenticated ? { visibility: "hidden", pointerEvents: "none" } : undefined}
       >
-        <div className="app-tabs-brand">
-          TRADER&apos;S <span>/ COCKPIT</span>
-        </div>
-        <div className="app-tabs-switch">
+        <div className="app-tabs-switch" style={{ marginLeft: 0 }}>
           <button
             type="button"
             className={tab === "journal" ? "active" : ""}
