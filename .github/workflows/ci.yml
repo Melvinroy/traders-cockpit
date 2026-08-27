@@ -49,7 +49,7 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Black
-        run: black --check .
+        run: black --check --diff .
       - name: Pytest
         run: pytest -q
 
