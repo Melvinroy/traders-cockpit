@@ -1,12 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CatalystDashboard } from "@/components/CatalystDashboard";
 import { Cockpit } from "@/components/Cockpit";
+import { api } from "@/lib/api";
 
 export function AppShell() {
   const [tab, setTab] = useState<"journal" | "catalyst">("journal");
+  const [authenticated, setAuthenticated] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const check = () => api.me().then(() => active && setAuthenticated(true)).catch(() => active && setAuthenticated(false));
+    void check();
+    const timer = window.setInterval(check, 3000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  if (!authenticated) return <Cockpit />;
 
   return (
     <div className="app-shell">
