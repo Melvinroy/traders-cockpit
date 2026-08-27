@@ -87,38 +87,46 @@ def build_router() -> APIRouter:
                 }
 
             params = {"as_of": as_of, "days": days}
-            rows = db.execute(
-                text(
-                    """
-                    with windowed as (
-                        select *, count(*) over (partition by ticker) as appearances
-                        from catalyst_dashboard_rows
+            rows = (
+                db.execute(
+                    text(
+                        """
+                        with windowed as (
+                            select *, count(*) over (partition by ticker) as appearances
+                            from catalyst_dashboard_rows
+                            where trading_date_checked between
+                                (cast(:as_of as date) - (:days - 1)) and cast(:as_of as date)
+                        ), latest as (
+                            select distinct on (ticker) * from windowed
+                            order by ticker, trading_date_checked desc, generated_at_sgt desc, row_order asc
+                        )
+                        select * from latest
+                        order by trading_date_checked desc, generated_at_sgt desc, row_order asc
+                        """
+                    ),
+                    params,
+                )
+                .mappings()
+                .all()
+            )
+            reports = (
+                db.execute(
+                    text(
+                        """
+                        select id::text as report_id, report_type, trading_date_checked,
+                               generated_at_sgt, market_summary, themes_summary, best_focus
+                        from catalyst_reports
                         where trading_date_checked between
                             (cast(:as_of as date) - (:days - 1)) and cast(:as_of as date)
-                    ), latest as (
-                        select distinct on (ticker) * from windowed
-                        order by ticker, trading_date_checked desc, generated_at_sgt desc, row_order asc
-                    )
-                    select * from latest
-                    order by trading_date_checked desc, generated_at_sgt desc, row_order asc
-                    """
-                ),
-                params,
-            ).mappings().all()
-            reports = db.execute(
-                text(
-                    """
-                    select id::text as report_id, report_type, trading_date_checked,
-                           generated_at_sgt, market_summary, themes_summary, best_focus
-                    from catalyst_reports
-                    where trading_date_checked between
-                        (cast(:as_of as date) - (:days - 1)) and cast(:as_of as date)
-                    order by generated_at_sgt desc
-                    limit 12
-                    """
-                ),
-                params,
-            ).mappings().all()
+                        order by generated_at_sgt desc
+                        limit 12
+                        """
+                    ),
+                    params,
+                )
+                .mappings()
+                .all()
+            )
 
             report_payloads: list[dict[str, Any]] = []
             for report in reports:
