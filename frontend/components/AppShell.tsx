@@ -12,25 +12,62 @@ export function AppShell() {
 
   useEffect(() => {
     let active = true;
-    const check = () => api.me().then(() => active && setAuthenticated(true)).catch(() => active && setAuthenticated(false));
+    const check = () =>
+      api
+        .me()
+        .then(() => active && setAuthenticated(true))
+        .catch(() => active && setAuthenticated(false));
     void check();
     const timer = window.setInterval(check, 3000);
-    return () => { active = false; window.clearInterval(timer); };
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
-  if (!authenticated) return <Cockpit />;
+  useEffect(() => {
+    if (!authenticated && tab !== "journal") {
+      setTab("journal");
+    }
+  }, [authenticated, tab]);
 
   return (
     <div className="app-shell">
-      <nav className="app-tabs" aria-label="Primary workspace">
-        <div className="app-tabs-brand">TRADER&apos;S <span>/ COCKPIT</span></div>
+      <nav
+        className={`app-tabs${authenticated ? "" : " app-tabs-pending"}`}
+        aria-label="Primary workspace"
+        aria-hidden={!authenticated}
+      >
+        <div className="app-tabs-brand">
+          TRADER&apos;S <span>/ COCKPIT</span>
+        </div>
         <div className="app-tabs-switch">
-          <button type="button" className={tab === "journal" ? "active" : ""} onClick={() => setTab("journal")}>JOURNAL</button>
-          <button type="button" className={tab === "catalyst" ? "active" : ""} onClick={() => setTab("catalyst")}>CATALYST</button>
+          <button
+            type="button"
+            className={tab === "journal" ? "active" : ""}
+            onClick={() => setTab("journal")}
+            tabIndex={authenticated ? 0 : -1}
+          >
+            JOURNAL
+          </button>
+          <button
+            type="button"
+            className={tab === "catalyst" ? "active" : ""}
+            onClick={() => setTab("catalyst")}
+            tabIndex={authenticated ? 0 : -1}
+          >
+            CATALYST
+          </button>
         </div>
       </nav>
-      <div className={tab === "journal" ? "app-view active" : "app-view hidden"}><Cockpit /></div>
-      <div className={tab === "catalyst" ? "app-view active" : "app-view hidden"}><CatalystDashboard /></div>
+      <div className={tab === "journal" ? "app-view active" : "app-view hidden"}>
+        <Cockpit />
+      </div>
+      {authenticated ? (
+        <div className={tab === "catalyst" ? "app-view active" : "app-view hidden"}>
+          <CatalystDashboard />
+        </div>
+      ) : null}
     </div>
   );
 }
