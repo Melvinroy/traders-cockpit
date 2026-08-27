@@ -137,7 +137,15 @@ try {
 
   await page.getByText("Setup Parameters").waitFor({ timeout: 30000 });
   await loadSetup(page, "MSFT");
-  await page.locator(".state-display").filter({ hasText: "SETUP LOADED" }).waitFor({ timeout: 15000 });
+  await page.getByText("Suggested Entry").waitFor({ state: "visible", timeout: 15000 });
+  await page.waitForFunction(
+    () => {
+      const entry = document.querySelector("#heroEntry");
+      return entry instanceof HTMLInputElement && Number(entry.value) > 0;
+    },
+    undefined,
+    { timeout: 15000 },
+  );
 
   await page.locator("#entryOrderType").selectOption("limit");
   await page.locator("#entryTimeInForce").selectOption("day");
