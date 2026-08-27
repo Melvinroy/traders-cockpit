@@ -186,3 +186,53 @@ export type AuthUser = {
   role: string;
   expires_at?: string | null;
 };
+
+export type CatalystDirection = "bullish" | "bearish" | "neutral";
+
+export type CatalystRow = {
+  report_id: string;
+  report_type: string;
+  generated_at_sgt: string;
+  ticker: string;
+  catalyst_event_date: string;
+  catalyst_quality_direction: string;
+  primary_catalyst_category: string;
+  catalyst_tags: string;
+  catalyst_summary: string;
+  sector: string;
+  theme: string;
+  direct_sympathy_sector_move: string;
+  sympathy_related_tickers: string;
+  catalyst_release_session: string;
+  reaction_date: string;
+  move_already_done: string;
+  volume_liquidity_confirmation: string;
+  freshness_catalyst_age: string;
+  source_confidence: "High" | "Medium" | "Low";
+  primary_source_evidence: string;
+  trade_read: string;
+  risk_invalidator: string;
+  action_priority: string;
+  trading_date_checked: string;
+  appearances: number;
+  direction: CatalystDirection;
+  importance_score: number;
+};
+
+export type CatalystReport = {
+  report_id: string;
+  report_type: string;
+  trading_date_checked: string;
+  generated_at_sgt: string;
+  market_summary: string | null;
+  themes_summary: string | null;
+  best_focus: string | null;
+};
+
+export type CatalystDashboardResponse = {
+  days: number;
+  as_of_date: string | null;
+  rows: CatalystRow[];
+  reports: CatalystReport[];
+  status: "ok" | "empty" | "unavailable";
+};

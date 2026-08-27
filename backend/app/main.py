@@ -20,6 +20,7 @@ from app.api import (
     routes_trade,
 )
 from app.api.routes_auth import router as auth_router
+from app.api.routes_catalysts import build_router as build_catalyst_router
 from app.core.config import Settings
 from app.core.observability import (
     REQUEST_ID_HEADER,
@@ -139,6 +140,7 @@ app.include_router(routes_broker.build_router(service))
 app.include_router(routes_market.build_router(service))
 app.include_router(routes_positions.build_router(service))
 app.include_router(routes_trade.build_router(service))
+app.include_router(build_catalyst_router())
 
 
 @app.get("/health")

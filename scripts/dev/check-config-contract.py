@@ -22,9 +22,14 @@ def extract_runtime_env_keys(config_path: Path) -> set[str]:
     return set(re.findall(r'os\.getenv\("([A-Z0-9_]+)"', text))
 
 
-def extract_readme_env_mentions(readme_path: Path) -> set[str]:
-    text = readme_path.read_text(encoding="utf-8")
-    return set(re.findall(r"`([A-Z0-9_]+)`", text))
+def extract_documented_env_mentions(paths: list[Path]) -> set[str]:
+    mentions: set[str] = set()
+    for path in paths:
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        mentions.update(re.findall(r"`([A-Z0-9_]+)`", text))
+    return mentions
 
 
 def main() -> int:
@@ -32,18 +37,21 @@ def main() -> int:
     env_example = repo_root / ".env.example"
     env_production = repo_root / ".env.production.example"
     config_path = repo_root / "backend" / "app" / "core" / "config.py"
-    readme_path = repo_root / "README.md"
+    documentation_paths = [
+        repo_root / "README.md",
+        repo_root / "docs" / "configuration" / "ENVIRONMENT.md",
+    ]
 
     env_example_keys = parse_env_keys(env_example)
     env_production_keys = parse_env_keys(env_production)
     runtime_keys = extract_runtime_env_keys(config_path)
-    readme_keys = extract_readme_env_mentions(readme_path)
+    documented_keys = extract_documented_env_mentions(documentation_paths)
     required_keys = runtime_keys | {"NEXT_PUBLIC_API_BASE_URL", "NEXT_PUBLIC_WS_URL"}
 
     failures: list[str] = []
     missing_in_env_example = sorted(required_keys - env_example_keys)
     missing_in_env_production = sorted(required_keys - env_production_keys)
-    missing_in_readme = sorted(required_keys - readme_keys)
+    missing_in_docs = sorted(required_keys - documented_keys)
     extra_in_production = sorted(env_production_keys - env_example_keys)
     missing_from_production = sorted(env_example_keys - env_production_keys)
 
@@ -56,8 +64,10 @@ def main() -> int:
             ".env.production.example is missing runtime keys: "
             + ", ".join(missing_in_env_production)
         )
-    if missing_in_readme:
-        failures.append("README.md is missing env documentation for: " + ", ".join(missing_in_readme))
+    if missing_in_docs:
+        failures.append(
+            "Configuration documentation is missing env keys: " + ", ".join(missing_in_docs)
+        )
     if extra_in_production:
         failures.append(
             ".env.production.example contains keys not present in .env.example: "

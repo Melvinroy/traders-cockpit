@@ -4,8 +4,11 @@ on:
   push:
     branches:
       - main
-      - codex/**
   pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   config-contract:
@@ -45,7 +48,7 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Black
-        run: black --check .
+        run: black --check --diff .
       - name: Pytest
         run: pytest -q
 
