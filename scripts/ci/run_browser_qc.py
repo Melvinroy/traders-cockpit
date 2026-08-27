@@ -23,6 +23,12 @@ FRONTEND_URL = f"http://{HOST}:{FRONTEND_PORT}"
 QC_SYMBOL = os.getenv("QC_SYMBOL", "MSFT").strip().upper() or "MSFT"
 AUTH_ADMIN_USERNAME = os.getenv("QC_AUTH_USERNAME", "admin")
 QC_ADMIN_PASSWORD = os.getenv("QC_AUTH_PASSWORD", "change-me-admin")
+RUN_LEGACY_EXECUTION_QC = os.getenv("RUN_LEGACY_EXECUTION_QC", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 def _script_command_name(base: str) -> str:
@@ -150,6 +156,8 @@ def main() -> None:
             "AUTH_REQUIRE_LOGIN": "true",
             "AUTH_ADMIN_USERNAME": AUTH_ADMIN_USERNAME,
             "AUTH_ADMIN_PASSWORD": QC_ADMIN_PASSWORD,
+            # Core Journal/Catalyst QC does not exercise order execution. Paper mode
+            # remains available only when RUN_LEGACY_EXECUTION_QC is explicitly enabled.
             "BROKER_MODE": "paper",
             "ALLOW_LIVE_TRADING": "false",
             "ALLOW_CONTROLLER_MOCK": "true",
@@ -221,6 +229,8 @@ def main() -> None:
         )
         _wait_for_http(FRONTEND_URL)
 
+        # Required product QC: authentication, Journal readiness, setup load,
+        # Journal <-> Catalyst navigation, Catalyst dashboard controls, and browser/network health.
         _run_command(
             [
                 "node",
@@ -232,66 +242,75 @@ def main() -> None:
             ],
             cwd=FRONTEND_DIR,
             env=browser_env,
-            description="Browser smoke",
-        )
-        _run_command(
-            [
-                "node",
-                (
-                    "..\\scripts\\dev\\pending-cancel-qc.mjs"
-                    if os.name == "nt"
-                    else "../scripts/dev/pending-cancel-qc.mjs"
-                ),
-            ],
-            cwd=FRONTEND_DIR,
-            env=browser_env,
-            description="Pending cancel QC",
-        )
-        _run_command(
-            [
-                "node",
-                (
-                    "..\\scripts\\dev\\fidelity-baselines.mjs"
-                    if os.name == "nt"
-                    else "../scripts/dev/fidelity-baselines.mjs"
-                ),
-            ],
-            cwd=FRONTEND_DIR,
-            env=browser_env,
-            description="Fidelity baselines",
-        )
-        _run_command(
-            [
-                "node",
-                (
-                    "..\\scripts\\dev\\trade-flow-qc.mjs"
-                    if os.name == "nt"
-                    else "../scripts/dev/trade-flow-qc.mjs"
-                ),
-            ],
-            cwd=FRONTEND_DIR,
-            env=browser_env,
-            description="Trade flow QC",
+            description="Journal and Catalyst browser smoke",
         )
 
-        _assert_artifacts_exist(
-            [
-                "ci-browser-smoke.png",
-                "ci-browser-smoke.console.txt",
-                "ci-browser-smoke.network.txt",
-                "pending-cancel-flow.png",
-                "baseline-idle.png",
-                "baseline-setup-loaded.png",
-                "baseline-trade-entered.png",
-                "baseline-protected.png",
-                "baseline-profit-flow.png",
-                "backend.stdout.log",
-                "backend.stderr.log",
-                "frontend.stdout.log",
-                "frontend.stderr.log",
-            ]
-        )
-        print(f"Browser QC passed: artifacts available under {OUTPUT_DIR}")
+        if RUN_LEGACY_EXECUTION_QC:
+            print("RUN_LEGACY_EXECUTION_QC=true: running legacy execution browser suite")
+            _run_command(
+                [
+                    "node",
+                    (
+                        "..\\scripts\\dev\\pending-cancel-qc.mjs"
+                        if os.name == "nt"
+                        else "../scripts/dev/pending-cancel-qc.mjs"
+                    ),
+                ],
+                cwd=FRONTEND_DIR,
+                env=browser_env,
+                description="Legacy pending cancel QC",
+            )
+            _run_command(
+                [
+                    "node",
+                    (
+                        "..\\scripts\\dev\\fidelity-baselines.mjs"
+                        if os.name == "nt"
+                        else "../scripts/dev/fidelity-baselines.mjs"
+                    ),
+                ],
+                cwd=FRONTEND_DIR,
+                env=browser_env,
+                description="Legacy fidelity baselines",
+            )
+            _run_command(
+                [
+                    "node",
+                    (
+                        "..\\scripts\\dev\\trade-flow-qc.mjs"
+                        if os.name == "nt"
+                        else "../scripts/dev/trade-flow-qc.mjs"
+                    ),
+                ],
+                cwd=FRONTEND_DIR,
+                env=browser_env,
+                description="Legacy trade flow QC",
+            )
+
+        required_artifacts = [
+            "ci-browser-smoke.png",
+            "ci-browser-smoke-catalyst.png",
+            "ci-browser-smoke.console.txt",
+            "ci-browser-smoke.network.txt",
+            "backend.stdout.log",
+            "backend.stderr.log",
+            "frontend.stdout.log",
+            "frontend.stderr.log",
+        ]
+        if RUN_LEGACY_EXECUTION_QC:
+            required_artifacts.extend(
+                [
+                    "pending-cancel-flow.png",
+                    "baseline-idle.png",
+                    "baseline-setup-loaded.png",
+                    "baseline-trade-entered.png",
+                    "baseline-protected.png",
+                    "baseline-profit-flow.png",
+                ]
+            )
+        _assert_artifacts_exist(required_artifacts)
+        suite = "core Journal/Catalyst + legacy execution" if RUN_LEGACY_EXECUTION_QC else "core Journal/Catalyst"
+        print(f"Browser QC passed ({suite}): artifacts available under {OUTPUT_DIR}")
     finally:
         _stop_process(frontend_process)
         _stop_process(backend_process)
