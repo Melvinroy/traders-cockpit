@@ -87,7 +87,7 @@ export function CatalystDashboard() {
     return () => { active = false; };
   }, [days]);
 
-  const rows = data?.rows ?? [];
+  const rows = useMemo(() => data?.rows ?? [], [data?.rows]);
   const filtered = useMemo(() => {
     const query = search.trim().toUpperCase();
     return rows.filter((row) => {
