@@ -6,20 +6,14 @@ from contextlib import asynccontextmanager
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.api import routes_account, routes_broker, routes_market, routes_positions, routes_trade
 from app.api.deps_auth import require_websocket_session
-from app.api import (
-    routes_account,
-    routes_broker,
-    routes_market,
-    routes_positions,
-    routes_trade,
-)
 from app.api.routes_auth import router as auth_router
+from app.api.routes_catalysts import build_router as build_catalyst_router
 from app.core.config import Settings
 from app.core.observability import (
     REQUEST_ID_HEADER,
@@ -31,11 +25,7 @@ from app.core.observability import (
     reset_request_id,
     resolve_request_id,
 )
-from app.core.startup_preflight import (
-    build_dependency_report,
-    build_liveness_report,
-    build_readiness_report,
-)
+from app.core.startup_preflight import build_dependency_report, build_liveness_report, build_readiness_report
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.services.auth import get_auth_store
@@ -109,26 +99,11 @@ async def request_id_middleware(request: Request, call_next):
         response = await call_next(request)
     except Exception:
         duration_ms = round((perf_counter() - started) * 1000, 2)
-        log_event(
-            "http.request.failed",
-            level="error",
-            **request_log_fields(
-                request,
-                status=500,
-                duration_ms=duration_ms,
-            ),
-        )
+        log_event("http.request.failed", level="error", **request_log_fields(request, status=500, duration_ms=duration_ms))
         raise
     response.headers[REQUEST_ID_HEADER] = request_id
     duration_ms = round((perf_counter() - started) * 1000, 2)
-    log_event(
-        "http.request.completed",
-        **request_log_fields(
-            request,
-            status=response.status_code,
-            duration_ms=duration_ms,
-        ),
-    )
+    log_event("http.request.completed", **request_log_fields(request, status=response.status_code, duration_ms=duration_ms))
     reset_request_id(token)
     return response
 
@@ -139,6 +114,7 @@ app.include_router(routes_broker.build_router(service))
 app.include_router(routes_market.build_router(service))
 app.include_router(routes_positions.build_router(service))
 app.include_router(routes_trade.build_router(service))
+app.include_router(build_catalyst_router())
 
 
 @app.get("/health")
@@ -154,8 +130,7 @@ def health_live() -> JSONResponse:
 @app.get("/health/ready")
 def health_ready() -> JSONResponse:
     payload = build_readiness_report(settings)
-    status_code = 200 if payload["status"] == "ok" else 503
-    return JSONResponse(payload, status_code=status_code)
+    return JSONResponse(payload, status_code=200 if payload["status"] == "ok" else 503)
 
 
 @app.get("/health/deps")
@@ -169,17 +144,14 @@ def health_dependencies() -> JSONResponse:
     }
     if any(item.get("status") != "ok" for item in payload["dependencies"].values()):
         payload["status"] = "error"
-    status_code = 200 if payload["status"] == "ok" else 503
-    return JSONResponse(payload, status_code=status_code)
+    return JSONResponse(payload, status_code=200 if payload["status"] == "ok" else 503)
 
 
 @app.websocket("/ws/cockpit")
 async def cockpit_ws(websocket: WebSocket) -> None:
     websocket_id = uuid4().hex[:12]
     client_session_id = (websocket.query_params.get("client_session_id") or "").strip() or None
-    connection_request_id = resolve_request_id(
-        websocket.query_params.get("request_id") or websocket.headers.get(REQUEST_ID_HEADER)
-    )
+    connection_request_id = resolve_request_id(websocket.query_params.get("request_id") or websocket.headers.get(REQUEST_ID_HEADER))
     username: str | None = None
     connected = False
     connect_request_token = bind_request_id(connection_request_id)
@@ -187,38 +159,13 @@ async def cockpit_ws(websocket: WebSocket) -> None:
     try:
         session = await require_websocket_session(websocket)
     except RuntimeError:
-        log_event(
-            "ws.auth.failed",
-            level="warning",
-            **request_log_fields(
-                path=websocket.url.path,
-                client_ip=websocket.client.host if websocket.client else None,
-                websocket_id=websocket_id,
-            ),
-        )
+        log_event("ws.auth.failed", level="warning", **request_log_fields(path=websocket.url.path, client_ip=websocket.client.host if websocket.client else None, websocket_id=websocket_id))
         reset_client_session_id(connect_session_token)
         reset_request_id(connect_request_token)
         return
     username = str(session["user"]["username"])
-    log_event(
-        "ws.connect",
-        **request_log_fields(
-            path=websocket.url.path,
-            client_ip=websocket.client.host if websocket.client else None,
-            websocket_id=websocket_id,
-            username=username,
-            channel="cockpit",
-        ),
-    )
-    await ws_manager.connect(
-        "cockpit",
-        websocket,
-        metadata={
-            "websocket_id": websocket_id,
-            "username": username,
-            "client_session_id": client_session_id,
-        },
-    )
+    log_event("ws.connect", **request_log_fields(path=websocket.url.path, client_ip=websocket.client.host if websocket.client else None, websocket_id=websocket_id, username=username, channel="cockpit"))
+    await ws_manager.connect("cockpit", websocket, metadata={"websocket_id": websocket_id, "username": username, "client_session_id": client_session_id})
     connected = True
     reset_client_session_id(connect_session_token)
     reset_request_id(connect_request_token)
@@ -230,29 +177,12 @@ async def cockpit_ws(websocket: WebSocket) -> None:
             except json.JSONDecodeError:
                 payload = {"action": "noop"}
             action = str(payload.get("action") or "noop")
-            message_request_id = resolve_request_id(
-                payload.get("requestId") if isinstance(payload.get("requestId"), str) else None
-            )
-            message_client_session_id = (
-                str(payload.get("clientSessionId")).strip()
-                if payload.get("clientSessionId") not in (None, "")
-                else client_session_id
-            )
+            message_request_id = resolve_request_id(payload.get("requestId") if isinstance(payload.get("requestId"), str) else None)
+            message_client_session_id = str(payload.get("clientSessionId")).strip() if payload.get("clientSessionId") not in (None, "") else client_session_id
             message_request_token = bind_request_id(message_request_id)
             message_session_token = bind_client_session_id(message_client_session_id)
             try:
-                log_event(
-                    "ws.message.received",
-                    **request_log_fields(
-                        path=websocket.url.path,
-                        client_ip=websocket.client.host if websocket.client else None,
-                        websocket_id=websocket_id,
-                        username=username,
-                        channel="cockpit",
-                        action=action,
-                        symbol=str(payload.get("symbol", "")).upper() or None,
-                    ),
-                )
+                log_event("ws.message.received", **request_log_fields(path=websocket.url.path, client_ip=websocket.client.host if websocket.client else None, websocket_id=websocket_id, username=username, channel="cockpit", action=action, symbol=str(payload.get("symbol", "")).upper() or None))
                 if action == "subscribe_price":
                     with SessionLocal() as db:
                         await service.publish_price_tick(db, str(payload.get("symbol", "")).upper())
@@ -266,16 +196,7 @@ async def cockpit_ws(websocket: WebSocket) -> None:
         if connected:
             disconnect_token = bind_request_id(connection_request_id)
             disconnect_session_token = bind_client_session_id(client_session_id)
-            log_event(
-                "ws.disconnect",
-                **request_log_fields(
-                    path=websocket.url.path,
-                    client_ip=websocket.client.host if websocket.client else None,
-                    websocket_id=websocket_id,
-                    username=username,
-                    channel="cockpit",
-                ),
-            )
+            log_event("ws.disconnect", **request_log_fields(path=websocket.url.path, client_ip=websocket.client.host if websocket.client else None, websocket_id=websocket_id, username=username, channel="cockpit"))
             reset_client_session_id(disconnect_session_token)
             reset_request_id(disconnect_token)
             await ws_manager.disconnect("cockpit", websocket)
