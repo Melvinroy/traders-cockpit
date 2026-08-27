@@ -1,6 +1,6 @@
 import React from "react";
-import { Cockpit } from "@/components/Cockpit";
+import { AppShell } from "@/components/AppShell";
 
 export default function Page() {
-  return <Cockpit />;
+  return <AppShell />;
 }
