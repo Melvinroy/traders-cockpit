@@ -11,6 +11,7 @@ const smokeLabel = (process.env.BROWSER_SMOKE_LABEL || "browser-smoke")
 const qcSymbol = (process.env.QC_SYMBOL || "MSFT").trim().toUpperCase() || "MSFT";
 const outputDir = path.resolve(process.cwd(), "output", "playwright");
 const screenshotPath = path.join(outputDir, `${smokeLabel}.png`);
+const catalystScreenshotPath = path.join(outputDir, `${smokeLabel}-catalyst.png`);
 const consolePath = path.join(outputDir, `${smokeLabel}.console.txt`);
 const networkPath = path.join(outputDir, `${smokeLabel}.network.txt`);
 const require = createRequire(import.meta.url);
@@ -159,6 +160,9 @@ try {
     requestFailures.length = 0;
     pageErrors.length = 0;
   }
+
+  // Journal smoke: auth, setup load and the existing core journal surface.
+  await page.getByRole("button", { name: "JOURNAL", exact: true }).waitFor({ timeout: 15000 });
   await loadSetup(page);
   await page.getByText("SETUP LOADED").waitFor({ timeout: 15000 });
   await page.getByText("Suggested Entry").waitFor({ timeout: 15000 });
@@ -166,6 +170,23 @@ try {
   await page.getByText("Profit Taking").waitFor({ timeout: 15000 });
   await page.getByText("Activity Log").waitFor({ timeout: 15000 });
   await page.screenshot({ path: screenshotPath, fullPage: true });
+
+  // Catalyst smoke: authenticated workspace navigation, dashboard shell and time windows.
+  await page.getByRole("button", { name: "CATALYST", exact: true }).click();
+  await page.getByRole("heading", { name: "Executive Signal Board", exact: true }).waitFor({ timeout: 15000 });
+  await page.getByRole("button", { name: "TODAY", exact: true }).waitFor({ timeout: 15000 });
+  await page.getByRole("button", { name: "3D", exact: true }).waitFor({ timeout: 15000 });
+  await page.getByRole("button", { name: "5D", exact: true }).waitFor({ timeout: 15000 });
+  await page.getByText("Signal scanner", { exact: true }).waitFor({ timeout: 15000 });
+  await page.screenshot({ path: catalystScreenshotPath, fullPage: true });
+
+  // Verify the Journal remains mounted and usable after a Catalyst round-trip.
+  await page.getByRole("button", { name: "JOURNAL", exact: true }).click();
+  await page.getByText("Setup Parameters").waitFor({ timeout: 15000 });
+  const retainedTicker = await page.locator("#tickerInput").inputValue();
+  if (retainedTicker !== qcSymbol) {
+    throw new Error(`Journal state was not retained across tab switch: expected ${qcSymbol}, got ${retainedTicker}`);
+  }
 
   await fs.writeFile(consolePath, `${consoleMessages.join("\n")}\n`, "utf8");
   await fs.writeFile(networkPath, `${requestLog.join("\n")}\n`, "utf8");
@@ -187,4 +208,4 @@ try {
   await browser.close();
 }
 
-console.log(`Browser smoke passed: ${screenshotPath}`);
+console.log(`Journal/Catalyst browser smoke passed: ${screenshotPath}`);
