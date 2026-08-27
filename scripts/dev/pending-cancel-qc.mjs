@@ -103,14 +103,9 @@ async function loadSetup(page, symbol = "MSFT") {
   const symbolInput = page.locator("#tickerInput");
   await symbolInput.waitFor({ state: "visible", timeout: 15000 });
   await symbolInput.fill(symbol);
-  await page.waitForFunction(
-    (value) => {
-      const input = document.querySelector("#tickerInput");
-      return input instanceof HTMLInputElement && input.value === value;
-    },
-    symbol,
-    { timeout: 5000 },
-  );
+  if ((await symbolInput.inputValue()) !== symbol) {
+    await symbolInput.fill(symbol);
+  }
   await symbolInput.press("Enter");
 }
 
