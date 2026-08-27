@@ -34,9 +34,10 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <nav
-        className={`app-tabs${authenticated ? "" : " app-tabs-pending"}`}
+        className="app-tabs"
         aria-label="Primary workspace"
         aria-hidden={!authenticated}
+        style={!authenticated ? { visibility: "hidden", pointerEvents: "none" } : undefined}
       >
         <div className="app-tabs-brand">
           TRADER&apos;S <span>/ COCKPIT</span>
