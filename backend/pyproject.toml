@@ -31,6 +31,9 @@ include = ["app*"]
 [tool.black]
 line-length = 100
 target-version = ["py313"]
+# Legacy auth storage SQL uses deliberate multiline-string layout. Keep it out
+# of repo-wide formatter enforcement until that module is migrated separately.
+extend-exclude = "app/services/auth.py"
 
 [tool.ruff]
 line-length = 100
