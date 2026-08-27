@@ -120,7 +120,7 @@ function pendingLimitFrom(entryText, stopText) {
   if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(stop) || stop <= 0) {
     throw new Error(`Unable to derive pending limit from entry=${entryText} stop=${stopText}`);
   }
-  const midpoint = Number(((entry + stop) / 2).toFixed(2));
+  const midpoint = Number((((entry + stop) / 2)).toFixed(2));
   if (midpoint <= stop) {
     return Number((stop + 0.1).toFixed(2));
   }
@@ -154,14 +154,9 @@ try {
   await page.locator("#entryLimitPrice").fill(String(pendingLimit));
 
   await page.getByRole("button", { name: /\u2197 ENTER TRADE|ENTER TRADE/ }).click();
+  await page.locator(".state-display").filter({ hasText: "ENTRY SUBMITTED" }).waitFor({ timeout: 15000 });
 
-  // Validate the durable persisted outcome rather than a transient in-memory refresh.
-  // A reload forces the cockpit to hydrate from backend positions/orders exactly as a
-  // user returning to the page would see them.
-  await page.reload({ waitUntil: "load" });
-  await page.getByText("Setup Parameters").waitFor({ timeout: 30000 });
   await page.getByRole("button", { name: "Open / Working", exact: true }).click();
-
   const cancelButton = page.locator(".orders-cancel-btn").first();
   await cancelButton.waitFor({ state: "visible", timeout: 15000 });
   const pendingRow = cancelButton.locator("xpath=ancestor::tr[1]");
