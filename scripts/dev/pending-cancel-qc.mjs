@@ -103,9 +103,14 @@ async function loadSetup(page, symbol = "MSFT") {
   const symbolInput = page.locator("#tickerInput");
   await symbolInput.waitFor({ state: "visible", timeout: 15000 });
   await symbolInput.fill(symbol);
-  if ((await symbolInput.inputValue()) !== symbol) {
-    await symbolInput.fill(symbol);
-  }
+  await page.waitForFunction(
+    (value) => {
+      const input = document.querySelector("#tickerInput");
+      return input instanceof HTMLInputElement && input.value === value;
+    },
+    symbol,
+    { timeout: 5000 },
+  );
   await symbolInput.press("Enter");
 }
 
@@ -115,7 +120,7 @@ function pendingLimitFrom(entryText, stopText) {
   if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(stop) || stop <= 0) {
     throw new Error(`Unable to derive pending limit from entry=${entryText} stop=${stopText}`);
   }
-  const midpoint = Number((((entry + stop) / 2)).toFixed(2));
+  const midpoint = Number(((entry + stop) / 2).toFixed(2));
   if (midpoint <= stop) {
     return Number((stop + 0.1).toFixed(2));
   }
@@ -137,15 +142,7 @@ try {
 
   await page.getByText("Setup Parameters").waitFor({ timeout: 30000 });
   await loadSetup(page, "MSFT");
-  await page.getByText("Suggested Entry").waitFor({ state: "visible", timeout: 15000 });
-  await page.waitForFunction(
-    () => {
-      const entry = document.querySelector("#heroEntry");
-      return entry instanceof HTMLInputElement && Number(entry.value) > 0;
-    },
-    undefined,
-    { timeout: 15000 },
-  );
+  await page.locator(".state-display").filter({ hasText: "SETUP LOADED" }).waitFor({ timeout: 15000 });
 
   await page.locator("#entryOrderType").selectOption("limit");
   await page.locator("#entryTimeInForce").selectOption("day");
