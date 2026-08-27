@@ -155,10 +155,13 @@ try {
 
   await page.getByRole("button", { name: /\u2197 ENTER TRADE|ENTER TRADE/ }).click();
 
-  // This QC verifies the durable outcome of a pending entry: a cancelable working
-  // broker order. The phase label is intentionally not used as a synchronization
-  // point because it is a transient projection that can lag the successful order POST.
+  // Validate the durable persisted outcome rather than a transient in-memory refresh.
+  // A reload forces the cockpit to hydrate from backend positions/orders exactly as a
+  // user returning to the page would see them.
+  await page.reload({ waitUntil: "load" });
+  await page.getByText("Setup Parameters").waitFor({ timeout: 30000 });
   await page.getByRole("button", { name: "Open / Working", exact: true }).click();
+
   const cancelButton = page.locator(".orders-cancel-btn").first();
   await cancelButton.waitFor({ state: "visible", timeout: 15000 });
   const pendingRow = cancelButton.locator("xpath=ancestor::tr[1]");
